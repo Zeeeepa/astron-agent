@@ -1,0 +1,577 @@
+version: '3.8'
+
+# =============================================================================
+# ASTRON-AGENT + ASTRON-RPA UNIFIED DEPLOYMENT
+# =============================================================================
+# This docker-compose file orchestrates both Astron-Agent and Astron-RPA
+# platforms for autonomous agentic operations with intelligent deployment.
+# =============================================================================
+
+networks:
+  astron-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  # Shared volumes
+  astron-data:
+  astron-logs:
+  astron-config:
+  
+  # Database volumes
+  mysql-data:
+  redis-data:
+  
+  # Storage volumes
+  minio-data:
+  
+  # RPA specific volumes
+  rpa-engine-data:
+  rpa-workflows:
+
+services:
+  # =============================================================================
+  # INFRASTRUCTURE SERVICES
+  # =============================================================================
+  
+  mysql:
+    image: mysql:8.0
+    container_name: astron-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-astron_root_2024}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-astron_db}
+      MYSQL_USER: ${MYSQL_USER:-astron_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-astron_pass_2024}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./deployment/sql/init:/docker-entrypoint-initdb.d
+    ports:
+      - "3306:3306"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.10
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: astron-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-astron_redis_2024}
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.11
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: astron-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-astron_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-astron_minio_2024}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.12
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # =============================================================================
+  # MONITORING AND OBSERVABILITY
+  # =============================================================================
+  
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: astron-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./deployment/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./deployment/monitoring/rules:/etc/prometheus/rules
+    ports:
+      - "9090:9090"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.20
+    depends_on:
+      - astron-agent-core
+      - astron-rpa-engine
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: astron-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-astron_grafana_2024}
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - ./deployment/monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./deployment/monitoring/grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3000:3000"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.21
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # =============================================================================
+  # ASTRON-AGENT SERVICES
+  # =============================================================================
+  
+  astron-agent-core:
+    build:
+      context: .
+      dockerfile: core/agent/Dockerfile
+    container_name: astron-agent-core
+    environment:
+      - DATABASE_URL=mysql://${MYSQL_USER:-astron_user}:${MYSQL_PASSWORD:-astron_pass_2024}@mysql:3306/${MYSQL_DATABASE:-astron_db}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-astron_redis_2024}@redis:6379/0
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-astron_minio}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-astron_minio_2024}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - OTLP_ENDPOINT=${OTLP_ENDPOINT:-http://jaeger:14268/api/traces}
+      - RPA_INTEGRATION_ENABLED=true
+      - RPA_ENGINE_URL=http://astron-rpa-engine:19999
+    volumes:
+      - astron-logs:/app/logs
+      - astron-config:/app/config
+    ports:
+      - "8000:8000"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.100
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  astron-agent-workflow:
+    build:
+      context: .
+      dockerfile: core/workflow/Dockerfile
+    container_name: astron-agent-workflow
+    environment:
+      - DATABASE_URL=mysql://${MYSQL_USER:-astron_user}:${MYSQL_PASSWORD:-astron_pass_2024}@mysql:3306/${MYSQL_DATABASE:-astron_db}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-astron_redis_2024}@redis:6379/1
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - OTLP_ENDPOINT=${OTLP_ENDPOINT:-http://jaeger:14268/api/traces}
+      - AGENT_CORE_URL=http://astron-agent-core:8000
+      - RPA_ENGINE_URL=http://astron-rpa-engine:19999
+    volumes:
+      - astron-logs:/app/logs
+      - astron-config:/app/config
+    ports:
+      - "8001:8001"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.101
+    depends_on:
+      - astron-agent-core
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  astron-agent-knowledge:
+    build:
+      context: .
+      dockerfile: core/knowledge/Dockerfile
+    container_name: astron-agent-knowledge
+    environment:
+      - DATABASE_URL=mysql://${MYSQL_USER:-astron_user}:${MYSQL_PASSWORD:-astron_pass_2024}@mysql:3306/${MYSQL_DATABASE:-astron_db}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-astron_redis_2024}@redis:6379/2
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-astron_minio}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-astron_minio_2024}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - VECTOR_DB_URL=${VECTOR_DB_URL:-http://qdrant:6333}
+    volumes:
+      - astron-logs:/app/logs
+      - astron-data:/app/data
+    ports:
+      - "8002:8002"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.102
+    depends_on:
+      - astron-agent-core
+      - minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  astron-agent-tenant:
+    build:
+      context: .
+      dockerfile: core/tenant/Dockerfile
+    container_name: astron-agent-tenant
+    environment:
+      - DATABASE_URL=mysql://${MYSQL_USER:-astron_user}:${MYSQL_PASSWORD:-astron_pass_2024}@mysql:3306/${MYSQL_DATABASE:-astron_db}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-astron_redis_2024}@redis:6379/3
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JWT_SECRET=${JWT_SECRET:-astron_jwt_secret_2024}
+    ports:
+      - "9000:9000"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.103
+    depends_on:
+      - mysql
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # =============================================================================
+  # ASTRON-AGENT CONSOLE SERVICES
+  # =============================================================================
+  
+  astron-console-backend:
+    build:
+      context: .
+      dockerfile: console/backend/Dockerfile
+    container_name: astron-console-backend
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-astron_db}
+      - SPRING_DATASOURCE_USERNAME=${MYSQL_USER:-astron_user}
+      - SPRING_DATASOURCE_PASSWORD=${MYSQL_PASSWORD:-astron_pass_2024}
+      - SPRING_REDIS_HOST=redis
+      - SPRING_REDIS_PASSWORD=${REDIS_PASSWORD:-astron_redis_2024}
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-astron_minio}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-astron_minio_2024}
+      - AGENT_CORE_URL=http://astron-agent-core:8000
+    volumes:
+      - astron-logs:/app/logs
+    ports:
+      - "8080:8080"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.110
+    depends_on:
+      - astron-agent-core
+      - mysql
+      - redis
+      - minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  astron-console-frontend:
+    build:
+      context: .
+      dockerfile: console/frontend/Dockerfile
+    container_name: astron-console-frontend
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8080
+      - VITE_AGENT_CORE_URL=http://localhost:8000
+      - VITE_RPA_ENGINE_URL=http://localhost:19999
+    ports:
+      - "3001:80"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.111
+    depends_on:
+      - astron-console-backend
+    restart: unless-stopped
+
+  # =============================================================================
+  # ASTRON-RPA SERVICES
+  # =============================================================================
+  
+  astron-rpa-engine:
+    build:
+      context: ./astron-rpa
+      dockerfile: engine/Dockerfile
+    container_name: astron-rpa-engine
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_PATH=/app/logs
+      - UVICORN_APP=api.app:xingchen_rap_server_app
+      - UVICORN_HOST=0.0.0.0
+      - UVICORN_PORT=19999
+      - UVICORN_WORKERS=4
+      - UVICORN_RELOAD=false
+      - UVICORN_WS_PING_INTERVAL=20.0
+      - UVICORN_WS_PING_TIMEOUT=20.0
+      - RPA_TIMEOUT=300
+      - RPA_PING_INTERVAL=30
+      - RPA_TASK_QUERY_INTERVAL=5
+      - RPA_TASK_CREATE_URL=http://astron-rpa-openapi:8082/api/v1/tasks
+      - RPA_TASK_QUERY_URL=http://astron-rpa-openapi:8082/api/v1/tasks
+      - AGENT_INTEGRATION_ENABLED=true
+      - AGENT_CORE_URL=http://astron-agent-core:8000
+    volumes:
+      - astron-logs:/app/logs
+      - rpa-engine-data:/app/data
+      - rpa-workflows:/app/workflows
+    ports:
+      - "19999:19999"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.200
+    depends_on:
+      - astron-agent-core
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:19999/health"]
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  astron-rpa-ai-service:
+    build:
+      context: ./astron-rpa
+      dockerfile: backend/ai-service/Dockerfile
+    container_name: astron-rpa-ai-service
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-astron_db}
+      - SPRING_DATASOURCE_USERNAME=${MYSQL_USER:-astron_user}
+      - SPRING_DATASOURCE_PASSWORD=${MYSQL_PASSWORD:-astron_pass_2024}
+      - SPRING_REDIS_HOST=redis
+      - SPRING_REDIS_PASSWORD=${REDIS_PASSWORD:-astron_redis_2024}
+      - RPA_ENGINE_URL=http://astron-rpa-engine:19999
+      - AI_MODEL_ENDPOINT=${AI_MODEL_ENDPOINT:-https://api.deepseek.com}
+      - AI_MODEL_API_KEY=${AI_MODEL_API_KEY}
+    ports:
+      - "8081:8081"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.201
+    depends_on:
+      - astron-rpa-engine
+      - mysql
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  astron-rpa-openapi-service:
+    build:
+      context: ./astron-rpa
+      dockerfile: backend/openapi-service/Dockerfile
+    container_name: astron-rpa-openapi
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-astron_db}
+      - SPRING_DATASOURCE_USERNAME=${MYSQL_USER:-astron_user}
+      - SPRING_DATASOURCE_PASSWORD=${MYSQL_PASSWORD:-astron_pass_2024}
+      - SPRING_REDIS_HOST=redis
+      - SPRING_REDIS_PASSWORD=${REDIS_PASSWORD:-astron_redis_2024}
+      - RPA_ENGINE_URL=http://astron-rpa-engine:19999
+      - AI_SERVICE_URL=http://astron-rpa-ai-service:8081
+    ports:
+      - "8082:8082"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.202
+    depends_on:
+      - astron-rpa-engine
+      - astron-rpa-ai-service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  astron-rpa-resource-service:
+    build:
+      context: ./astron-rpa
+      dockerfile: backend/resource-service/Dockerfile
+    container_name: astron-rpa-resource
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-astron_db}
+      - SPRING_DATASOURCE_USERNAME=${MYSQL_USER:-astron_user}
+      - SPRING_DATASOURCE_PASSWORD=${MYSQL_PASSWORD:-astron_pass_2024}
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-astron_minio}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-astron_minio_2024}
+    ports:
+      - "8083:8083"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.203
+    depends_on:
+      - mysql
+      - minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  astron-rpa-robot-service:
+    build:
+      context: ./astron-rpa
+      dockerfile: backend/robot-service/Dockerfile
+    container_name: astron-rpa-robot
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-astron_db}
+      - SPRING_DATASOURCE_USERNAME=${MYSQL_USER:-astron_user}
+      - SPRING_DATASOURCE_PASSWORD=${MYSQL_PASSWORD:-astron_pass_2024}
+      - SPRING_REDIS_HOST=redis
+      - SPRING_REDIS_PASSWORD=${REDIS_PASSWORD:-astron_redis_2024}
+      - RPA_ENGINE_URL=http://astron-rpa-engine:19999
+      - RESOURCE_SERVICE_URL=http://astron-rpa-resource:8083
+    ports:
+      - "8084:8084"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.204
+    depends_on:
+      - astron-rpa-engine
+      - astron-rpa-resource-service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  astron-rpa-frontend:
+    build:
+      context: ./astron-rpa
+      dockerfile: frontend/Dockerfile
+    container_name: astron-rpa-frontend
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8082
+      - VITE_RPA_ENGINE_URL=http://localhost:19999
+      - VITE_AI_SERVICE_URL=http://localhost:8081
+      - VITE_AGENT_INTEGRATION_URL=http://localhost:8000
+    ports:
+      - "3002:80"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.205
+    depends_on:
+      - astron-rpa-openapi-service
+    restart: unless-stopped
+
+  # =============================================================================
+  # AUTONOMOUS MONITORING AND SELF-HEALING
+  # =============================================================================
+  
+  astron-self-healing-monitor:
+    build:
+      context: .
+      dockerfile: deployment/monitoring/Dockerfile
+    container_name: astron-self-healing-monitor
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - MONITORING_CONFIG_PATH=/app/config/monitoring.yml
+      - CODEGEN_API_KEY=${CODEGEN_API_KEY}
+      - CODEGEN_BASE_URL=${CODEGEN_BASE_URL:-https://api.codegen.com}
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL}
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./deployment/config:/app/config
+      - astron-logs:/app/logs
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.250
+    depends_on:
+      - astron-agent-core
+      - astron-rpa-engine
+      - prometheus
+    restart: unless-stopped
+
+  # =============================================================================
+  # ADDITIONAL SERVICES
+  # =============================================================================
+  
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: astron-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.30
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: astron-qdrant
+    volumes:
+      - ./deployment/qdrant/storage:/qdrant/storage
+    ports:
+      - "6333:6333"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.31
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: astron-nginx
+    volumes:
+      - ./deployment/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./deployment/nginx/ssl:/etc/nginx/ssl
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      astron-network:
+        ipv4_address: 172.20.0.40
+    depends_on:
+      - astron-console-frontend
+      - astron-rpa-frontend
+    restart: unless-stopped
