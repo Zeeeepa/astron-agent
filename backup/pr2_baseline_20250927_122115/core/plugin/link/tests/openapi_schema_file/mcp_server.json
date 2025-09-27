@@ -1,0 +1,14 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "计算器MCP服务",
+    "description": "一个测试用简单的计算器MCP服务",
+    "version": "v1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://lxwang.mcp.com/mcp/calc",
+      "description": "计算器MCP服务"
+    }
+  ]
+}

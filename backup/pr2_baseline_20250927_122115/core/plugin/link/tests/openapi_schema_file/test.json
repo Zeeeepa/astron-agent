@@ -1,0 +1,81 @@
+{
+	"openapi": "3.1.0",
+	"info": {
+		"title": "agentBuilder工具集",
+		"version": "1.0.0"
+	},
+	"servers": [
+		{
+			"description": "a server description",
+			"url": "https://dev.iflyaicloud.com"
+		}
+	],
+	"paths": {
+		"/api/v1/auth/getUserInfo": {
+			"get": {
+				"description": "1",
+				"operationId": "1-haYVfS18",
+				"parameters": [
+					{
+						"description": "数组1",
+						"in": "query",
+						"name": "array1",
+						"required": true,
+						"schema": {
+							"default": [],
+							"items": {
+								"type": "string"
+							},
+							"type": "array",
+							"x-from": 2
+						}
+					},
+					{
+						"description": "数组2",
+						"in": "query",
+						"name": "array2",
+						"required": true,
+						"schema": {
+							"default": [],
+							"items": {
+								"properties": {
+									"obj-int": {
+										"default": 2,
+										"description": "数字1",
+										"type": "integer",
+										"x-from": 2
+									}
+								},
+								"required": [
+									"obj-int"
+								],
+								"type": "object"
+							},
+							"type": "array",
+							"x-from": 2
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"properties": {
+										"code": {
+											"description": "错误码",
+											"type": "integer"
+										}
+									},
+									"type": "object"
+								}
+							}
+						},
+						"description": "success"
+					}
+				},
+				"summary": "1"
+			}
+		}
+	}
+}

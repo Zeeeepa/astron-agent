@@ -1,0 +1,320 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "航班交通出行",
+    "description": "为用户提供航班交通出行工具信息查询，包括航班信息查询和特定航班状态查询",
+    "version": "v1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://content.xfyun.cn",
+      "description": "航班交通出行"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "api_key": {
+        "in": "header",
+        "name": "param",
+        "type": "apiKey"
+      }
+    }
+  },
+  "paths": {
+    "/flight/query": {
+      "get": {
+        "summary": "根据用户提供的起止城市，起止机场，起止机场编码，出发日期，航班号查询航班信息。",
+        "description": "根据用户提供的起止城市，起止机场，起止机场编码，出发日期，航班号查询航班信息。",
+        "operationId": "ai-flight-query",
+        "parameters": [
+          {
+            "name": "departCity",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "出发城市",
+              "default": "合肥"
+            },
+            "required": false
+          },
+          {
+            "name": "departAirport",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "出发机场"
+            },
+            "required": false
+          },
+          {
+            "name": "departAirportCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "出发机场三字码"
+            },
+            "required": false
+          },
+          {
+            "name": "departCityCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "出发城市三字码"
+            },
+            "required": false
+          },
+          {
+            "name": "arriveCity",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "目标城市"
+            },
+            "required": false
+          },
+          {
+            "name": "arriveAirport",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "目标机场"
+            },
+            "required": false
+          },
+          {
+            "name": "arriveAirportCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "目标机场三字码"
+            },
+            "required": false
+          },
+          {
+            "name": "arriveCityCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "到达城市三字码"
+            },
+            "required": false
+          },
+          {
+            "name": "departDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "出发日期"
+            },
+            "required": false
+          },
+          {
+            "name": "departTime",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "出发时间"
+            },
+            "required": false
+          },
+          {
+            "name": "flightNumber",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "具体航班编号"
+            },
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "返回航班信息，航班信息包括起止城市，起止机场，起止机场编码，预定的出发时间与到达时间，航班最低价，航班价格详细信息，航空公司，航班编号，经停机场，停留时间，航班信源等。价格相信信息包含航班机票价格，折扣率，舱型，剩余机票数量，航班改签说明，航班取消说明，航班免费行李说明，价格提供商",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "limit": {
+                      "type": "string",
+                      "example": ""
+                    },
+                    "msg": {
+                      "type": "string",
+                      "example": ""
+                    },
+                    "offset": {
+                      "type": "string",
+                      "example": ""
+                    },
+                    "rc": {
+                      "type": "string",
+                      "example": ""
+                    },
+                    "semantic": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "sid": {
+                      "type": "string",
+                      "example": ""
+                    },
+                    "total": {
+                      "type": "string",
+                      "example": ""
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "departCity",
+                          "arriveCity"
+                        ],
+                        "properties": {
+                          "departCity": {
+                            "type": "string",
+                            "description": "出发城市"
+                          },
+                          "dPort": {
+                            "type": "string",
+                            "description": "出发机场"
+                          },
+                          "arriveCity": {
+                            "type": "string",
+                            "description": "目标城市"
+                          },
+                          "aPort": {
+                            "type": "string",
+                            "description": "目标机场"
+                          },
+                          "takeOffTime": {
+                            "type": "string",
+                            "description": "出发时间"
+                          },
+                          "takeOffTimeStamp": {
+                            "type": "string",
+                            "description": "出发时间时间戳"
+                          },
+                          "starttimestamp": {
+                            "type": "integer",
+                            "format": "int64",
+                            "description": "出发时间时间戳"
+                          },
+                          "starttime_for_voice": {
+                            "type": "string",
+                            "description": "出发时间（语音格式）"
+                          },
+                          "arriveTime": {
+                            "type": "string",
+                            "description": "到达时间"
+                          },
+                          "arriveTimeStamp": {
+                            "type": "string",
+                            "description": "到达时间时间戳"
+                          },
+                          "endtimestamp": {
+                            "type": "integer",
+                            "format": "int64",
+                            "description": "到达时间时间戳"
+                          },
+                          "endtime_for_voice": {
+                            "type": "string",
+                            "description": "到达时间（语音格式）"
+                          },
+                          "standardPrice": {
+                            "type": "string",
+                            "description": "航班标准价"
+                          },
+                          "airline": {
+                            "type": "string",
+                            "description": "航空公司"
+                          },
+                          "flight": {
+                            "type": "string",
+                            "description": "航班编号"
+                          },
+                          "rate": {
+                            "type": "string",
+                            "description": "折扣率"
+                          },
+                          "quantity": {
+                            "type": "string",
+                            "description": "剩余票"
+                          },
+                          "price": {
+                            "type": "string",
+                            "description": "票价"
+                          },
+                          "cabinInfo": {
+                            "type": "string",
+                            "description": "坐席"
+                          },
+                          "departActualTime": {
+                            "type": "string",
+                            "description": "实际起飞时间"
+                          },
+                          "arriveActualTime": {
+                            "type": "string",
+                            "description": "实际到达时间"
+                          },
+                          "departReadyTime": {
+                            "type": "string",
+                            "description": "预计起飞时间"
+                          },
+                          "arriveReadyTime": {
+                            "type": "string",
+                            "description": "预计到达时间"
+                          },
+                          "departTimezone": {
+                            "type": "string",
+                            "description": "出发地时区"
+                          },
+                          "arriveTimezone": {
+                            "type": "string",
+                            "description": "目的地时区"
+                          },
+                          "ontimeRate": {
+                            "type": "string",
+                            "description": "历史准点率"
+                          },
+                          "flightState": {
+                            "type": "string",
+                            "description": "航班状态（计划、延误、取消、备降、返航、起飞、到达、备降起飞、备降取消、备降到达、返航起飞、返航取消、返航到达、提前取消、正在盘旋、盘旋过、正在上升、开始巡航、开始下降、即将到达）"
+                          },
+                          "todayTimeRate": {
+                            "type": "string",
+                            "description": "当日准点率（在航班未起飞状态才会有）"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    }
+  }
+}

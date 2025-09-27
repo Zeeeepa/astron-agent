@@ -1,0 +1,40 @@
+# Astron Network Configuration
+# Defines the custom bridge network for Astron services
+
+version: '3.8'
+
+networks:
+  astron-integration-network:
+    driver: bridge
+    name: astron-integration-network
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
+    driver_opts:
+      com.docker.network.bridge.name: astron-br0
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+      com.docker.network.bridge.host_binding_ipv4: "0.0.0.0"
+    labels:
+      - "com.astron.network.type=integration"
+      - "com.astron.network.environment=development"
+      - "com.astron.network.version=1.0"
+
+  astron-monitoring-network:
+    driver: bridge
+    name: astron-monitoring-network
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.21.0.0/16
+          gateway: 172.21.0.1
+    driver_opts:
+      com.docker.network.bridge.name: astron-mon-br0
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    labels:
+      - "com.astron.network.type=monitoring"
+      - "com.astron.network.environment=development"
+      - "com.astron.network.version=1.0"
