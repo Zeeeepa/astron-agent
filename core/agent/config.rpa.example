@@ -1,0 +1,201 @@
+# Astron-RPA Integration Configuration
+# Copy this file to config.rpa.env and update the values as needed
+
+# ============================================================================
+# RPA Service Configuration
+# ============================================================================
+
+# RPA OpenAPI Service URL (default: http://astron-rpa:8020)
+RPA_OPENAPI_URL=http://localhost:8020
+
+# RPA API Key for authentication (optional)
+RPA_API_KEY=
+
+# RPA service timeout in seconds (default: 300)
+RPA_TIMEOUT=300
+
+# RPA retry count for failed operations (default: 3)
+RPA_RETRY_COUNT=3
+
+# ============================================================================
+# RPA Integration Settings
+# ============================================================================
+
+# Enable/disable RPA integration (default: true)
+RPA_INTEGRATION_ENABLED=true
+
+# Enable debug mode for detailed logging (default: false)
+RPA_DEBUG_MODE=false
+
+# ============================================================================
+# Workflow Configuration
+# ============================================================================
+
+# Enable parallel execution of workflows (default: true)
+RPA_PARALLEL_EXECUTION=true
+
+# Maximum number of concurrent workflow executions (default: 5)
+RPA_MAX_CONCURRENT_WORKFLOWS=5
+
+# Default workflow execution timeout in seconds (default: 600)
+RPA_WORKFLOW_TIMEOUT=600
+
+# Automatically retry failed workflows (default: true)
+RPA_AUTO_RETRY_FAILED=true
+
+# ============================================================================
+# Validation Configuration
+# ============================================================================
+
+# Default validation timeout in seconds (default: 300)
+RPA_VALIDATION_TIMEOUT=300
+
+# Minimum confidence threshold for validation success (default: 0.8)
+RPA_CONFIDENCE_THRESHOLD=0.8
+
+# Enable screenshot capture during validation (default: true)
+RPA_SCREENSHOT_ENABLED=true
+
+# Enable detailed logging for validation processes (default: true)
+RPA_DETAILED_LOGGING=true
+
+# ============================================================================
+# Database Configuration
+# ============================================================================
+
+# MySQL connection URL
+MYSQL_URL=mysql://root:root123@localhost:3306/astron_unified
+
+# Redis connection URL
+REDIS_URL=redis://localhost:6379
+
+# ============================================================================
+# Service Configuration
+# ============================================================================
+
+# Agent service host (default: 0.0.0.0)
+SERVICE_HOST=0.0.0.0
+
+# Agent service port (default: 8000)
+SERVICE_PORT=8000
+
+# Number of service workers (default: 1)
+SERVICE_WORKERS=1
+
+# Enable service reload for development (default: false)
+SERVICE_RELOAD=false
+
+# ============================================================================
+# Docker Configuration (for docker-compose)
+# ============================================================================
+
+# Agent service port mapping (default: 8000)
+AGENT_PORT=8000
+
+# RPA OpenAPI service port mapping (default: 8020)
+RPA_OPENAPI_PORT=8020
+
+# RPA Engine service port mapping (default: 8021)
+RPA_ENGINE_PORT=8021
+
+# MySQL port mapping (default: 3306)
+MYSQL_PORT=3306
+
+# Redis port mapping (default: 6379)
+REDIS_PORT=6379
+
+# MySQL root password
+MYSQL_ROOT_PASSWORD=root123
+
+# MySQL user credentials
+MYSQL_USER=astron
+MYSQL_PASSWORD=astron123
+
+# ============================================================================
+# Monitoring Configuration (Optional)
+# ============================================================================
+
+# Prometheus port mapping (default: 9090)
+PROMETHEUS_PORT=9090
+
+# Grafana port mapping (default: 3000)
+GRAFANA_PORT=3000
+
+# Grafana admin password
+GRAFANA_PASSWORD=admin123
+
+# Log level for services (default: INFO)
+LOG_LEVEL=INFO
+
+# ============================================================================
+# Component-Specific Configuration
+# ============================================================================
+
+# UI Automation Components
+RPA_UI_COMPONENTS=rpabrowser,rpacv,rpawindow
+
+# API Testing Components
+RPA_API_COMPONENTS=rpanetwork,rpaopenapi
+
+# Data Processing Components
+RPA_DATA_COMPONENTS=rpadatabase,rpaexcel,rpapdf,rpadocx
+
+# AI Processing Components
+RPA_AI_COMPONENTS=rpaai,rpaverifycode
+
+# System Automation Components
+RPA_SYSTEM_COMPONENTS=rpasystem,rpaencrypt,rpaemail,rpaenterprise
+
+# ============================================================================
+# Development Configuration
+# ============================================================================
+
+# Enable development mode features
+DEV_MODE=false
+
+# Enable API documentation (Swagger/OpenAPI)
+ENABLE_DOCS=true
+
+# Enable CORS for development
+ENABLE_CORS=true
+
+# Allowed CORS origins (comma-separated)
+CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+
+# ============================================================================
+# Security Configuration
+# ============================================================================
+
+# JWT secret key for authentication (generate a secure random key)
+JWT_SECRET_KEY=your-super-secret-jwt-key-here
+
+# JWT token expiration time in seconds (default: 3600 = 1 hour)
+JWT_EXPIRATION=3600
+
+# Enable API rate limiting
+ENABLE_RATE_LIMITING=true
+
+# Rate limit: requests per minute (default: 100)
+RATE_LIMIT_PER_MINUTE=100
+
+# ============================================================================
+# Observability Configuration
+# ============================================================================
+
+# Enable distributed tracing
+ENABLE_TRACING=true
+
+# Tracing service endpoint (e.g., Jaeger)
+TRACING_ENDPOINT=http://localhost:14268/api/traces
+
+# Enable metrics collection
+ENABLE_METRICS=true
+
+# Metrics endpoint for Prometheus scraping
+METRICS_ENDPOINT=/metrics
+
+# Enable health checks
+ENABLE_HEALTH_CHECKS=true
+
+# Health check endpoint
+HEALTH_CHECK_ENDPOINT=/health
