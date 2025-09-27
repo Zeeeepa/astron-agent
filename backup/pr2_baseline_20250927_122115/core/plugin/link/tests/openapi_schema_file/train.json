@@ -1,0 +1,127 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "火车查询",
+    "description": "提供全国火车票时刻查询",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://jisutrainf.market.alicloudapi.com",
+      "description": "提供全国火车票时刻查询"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "api_key": {
+        "in": "header",
+        "name": "param",
+        "type": "apiKey"
+      }
+    }
+  },
+  "paths": {
+    "/train/station2s": {
+      "get": {
+        "summary": "提供全国火车票时刻查询",
+        "description": "根据用户提供的起点和终点和相关时间信息，查询火车站点信息",
+        "operationId": "get_train_station2s",
+        "parameters": [
+          {
+            "name": "start",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "起点站"
+            },
+            "required": false
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "终点站"
+            },
+            "required": true
+          },
+          {
+            "name": "ishigh",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "0",
+                "1"
+              ],
+              "description": "是否高铁, 0=非高铁, 1=高铁"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "出发日期, 格式: yyyy-MM-dd"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "x-alias": "Authorization",
+            "schema": {
+              "type": "string",
+              "description": "鉴权信息",
+              "default": "APPCODE 942441ff82914ed187324dcc60fceb0a"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "返回站点信息",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "format": "int64",
+                      "example": 200,
+                      "description": "状态码"
+                    },
+                    "msg": {
+                      "type": "string",
+                      "example": "success",
+                      "description": "状态信息"
+                    },
+                    "result": {
+                      "type": "string",
+                      "description": "返回结果"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    }
+  }
+}

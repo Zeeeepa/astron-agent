@@ -1,0 +1,25 @@
+{
+    "backup_timestamp": "20250927_122115",
+    "git_branch": "codegen-bot/astron-rpa-integration-1758964019",
+    "git_commit": "e3f312c3fd2ec68690659aeafcdd83321a48941f",
+    "git_commit_message": "feat: Add comprehensive testing, deployment automation, and Playwright interaction",
+    "git_author": "codegen-sh[bot] <131295404+codegen-sh[bot]@users.noreply.github.com>",
+    "git_date": "2025-09-27 10:02:12 +0000",
+    "repository_stats": {
+        "total_files": 1438,
+        "python_files": 1340,
+        "test_files": 172,
+        "lines_of_code": 200352
+    },
+    "backup_contents": [
+        "core/",
+        "docker/",
+        "tests/",
+        "scripts/",
+        "docs/",
+        "requirements-test.txt",
+        "README.md",
+        ".env.example",
+        "Makefile"
+    ]
+}

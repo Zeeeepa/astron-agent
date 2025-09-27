@@ -1,0 +1,169 @@
+{
+    "info": {
+        "title": "agentBuilder工具集",
+        "version": "1.0.0",
+        "x-is-official": false
+    },
+    "openapi": "3.1.0",
+    "paths": {
+        "/ocp-common/v1/jhSearch/search": {
+            "get": {
+                "description": "聚合搜索",
+                "operationId": "聚合搜索-gwwOW4sT",
+                "parameters": [
+                    {
+                        "description": "openId",
+                        "in": "query",
+                        "name": "openId",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "x-display": true,
+                            "x-from": 1
+                        }
+                    },
+                    {
+                        "description": "dId",
+                        "in": "query",
+                        "name": "dId",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "x-display": true,
+                            "x-from": 1
+                        }
+                    },
+                    {
+                        "description": "pipelineName",
+                        "in": "query",
+                        "name": "pipelineName",
+                        "required": true,
+                        "schema": {
+                            "default": "pl_map_agg_search_biz",
+                            "type": "string",
+                            "x-display": true,
+                            "x-from": 2
+                        }
+                    },
+                    {
+                        "description": "pageSize",
+                        "in": "query",
+                        "name": "pageSize",
+                        "required": true,
+                        "schema": {
+                            "default": "5",
+                            "type": "string",
+                            "x-display": true,
+                            "x-from": 2
+                        }
+                    },
+                    {
+                        "description": "name",
+                        "in": "query",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "x-display": true,
+                            "x-from": 1
+                        }
+                    },
+                    {
+                        "description": "fullText",
+                        "in": "query",
+                        "name": "fullText",
+                        "required": true,
+                        "schema": {
+                            "default": "true",
+                            "type": "string",
+                            "x-display": true,
+                            "x-from": 2
+                        }
+                    },
+                    {
+                        "description": "openReRank",
+                        "in": "query",
+                        "name": "openReRank",
+                        "required": true,
+                        "schema": {
+                            "default": "true",
+                            "type": "string",
+                            "x-display": true,
+                            "x-from": 2
+                        }
+                    },
+                    {
+                        "description": "disableHighlight",
+                        "in": "query",
+                        "name": "disableHighlight",
+                        "required": true,
+                        "schema": {
+                            "default": "true",
+                            "type": "string",
+                            "x-display": true,
+                            "x-from": 2
+                        }
+                    },
+                    {
+                        "description": "disableCrawler",
+                        "in": "query",
+                        "name": "disableCrawler",
+                        "required": true,
+                        "schema": {
+                            "default": "true",
+                            "type": "string",
+                            "x-display": true,
+                            "x-from": 2
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "data": {
+                                            "description": "data",
+                                            "properties": {
+                                                "documents": {
+                                                    "description": "documents",
+                                                    "items": {
+                                                        "properties": {
+                                                            "summary": {
+                                                                "description": "summary",
+                                                                "type": "string",
+                                                                "x-display": true
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            
+                                                        ],
+                                                        "type": "object"
+                                                    },
+                                                    "type": "array",
+                                                    "x-display": true
+                                                }
+                                            },
+                                            "type": "object",
+                                            "x-display": true
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "success"
+                    }
+                },
+                "summary": "聚合搜索"
+            }
+        }
+    },
+    "servers": [
+        {
+            "description": "a server description",
+            "url": "http://apisix-pre-in.iflytekauto.cn"
+        }
+    ]
+}

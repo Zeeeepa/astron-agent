@@ -1,0 +1,78 @@
+# Astron-RPA Base Dockerfile
+# Enhanced Docker image for Astron-RPA with Python 3.13+ and component support
+
+FROM python:3.13-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies for RPA components
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    build-essential \
+    chromium \
+    chromium-driver \
+    xvfb \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libdrm2 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libxss1 \
+    libnss3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN groupadd -r rpa && useradd -r -g rpa rpa
+
+# Create directories for RPA components
+RUN mkdir -p /app/components /app/workflows /app/logs && \
+    chown -R rpa:rpa /app
+
+# Copy requirements
+COPY requirements.txt ./
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install additional RPA-specific packages
+RUN pip install --no-cache-dir \
+    playwright \
+    selenium \
+    opencv-python-headless \
+    pytesseract \
+    pillow \
+    requests \
+    aiohttp \
+    pandas \
+    openpyxl \
+    PyPDF2 \
+    python-docx \
+    cryptography \
+    paramiko
+
+# Install Playwright browsers
+RUN playwright install chromium
+
+# Copy application code
+COPY . .
+
+# Set proper permissions
+RUN chown -R rpa:rpa /app
+
+# Switch to non-root user
+USER rpa
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8020/health || exit 1
+
+# Expose ports
+EXPOSE 8020 8021
+
+# Default command for OpenAPI service
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8020"]

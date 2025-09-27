@@ -1,0 +1,1 @@
+"""Errors test module."""
