@@ -1,4 +1,5 @@
-version: '3.8'
+# Docker Compose file for unified astron-agent + astron-rpa deployment
+# Note: version field is obsolete in modern Docker Compose
 
 # ============================================================================
 # UNIFIED DEPLOYMENT: astron-agent + astron-rpa
@@ -186,9 +187,7 @@ services:
 
   # astron-rpa AI Service
   rpa-ai-service:
-    build:
-      context: https://github.com/Zeeeepa/astron-rpa.git
-      dockerfile: backend/ai-service/Dockerfile
+    image: astron-rpa/ai-service:latest
     container_name: astron-rpa-ai-service
     environment:
       # Database Configuration
@@ -229,9 +228,7 @@ services:
 
   # astron-rpa OpenAPI Service
   rpa-openapi-service:
-    build:
-      context: https://github.com/Zeeeepa/astron-rpa.git
-      dockerfile: backend/openapi-service/Dockerfile
+    image: astron-rpa/openapi-service:latest
     container_name: astron-rpa-openapi-service
     environment:
       # Database Configuration
@@ -271,9 +268,7 @@ services:
 
   # astron-rpa Resource Service
   rpa-resource-service:
-    build:
-      context: https://github.com/Zeeeepa/astron-rpa.git
-      dockerfile: backend/resource-service/Dockerfile
+    image: astron-rpa/resource-service:latest
     container_name: astron-rpa-resource-service
     environment:
       # Database Configuration
@@ -314,9 +309,7 @@ services:
 
   # astron-rpa Robot Service
   rpa-robot-service:
-    build:
-      context: https://github.com/Zeeeepa/astron-rpa.git
-      dockerfile: backend/robot-service/Dockerfile
+    image: astron-rpa/robot-service:latest
     container_name: astron-rpa-robot-service
     environment:
       # Database Configuration
@@ -357,9 +350,7 @@ services:
 
   # astron-rpa Frontend
   rpa-frontend:
-    build:
-      context: https://github.com/Zeeeepa/astron-rpa.git
-      dockerfile: frontend/Dockerfile
+    image: astron-rpa/frontend:latest
     container_name: astron-rpa-frontend
     environment:
       # API Configuration
@@ -391,9 +382,7 @@ services:
 
   # astron-agent Core Agent Service
   agent-core-agent:
-    build:
-      context: .
-      dockerfile: core/agent/Dockerfile
+    image: astron-agent/core-agent:latest
     container_name: astron-agent-core-agent
     environment:
       # Python Environment
@@ -466,9 +455,7 @@ services:
 
   # astron-agent RPA Plugin Service (with integration to astron-rpa)
   agent-core-rpa:
-    build:
-      context: .
-      dockerfile: core/plugin/rpa/Dockerfile
+    image: astron-agent/core-rpa:latest
     container_name: astron-agent-core-rpa
     environment:
       # Python Environment
@@ -520,9 +507,7 @@ services:
 
   # astron-agent Knowledge Service
   agent-core-knowledge:
-    build:
-      context: .
-      dockerfile: core/knowledge/Dockerfile
+    image: astron-agent/core-knowledge:latest
     container_name: astron-agent-core-knowledge
     environment:
       # Service Configuration
@@ -562,9 +547,7 @@ services:
 
   # astron-agent Memory Service
   agent-core-memory:
-    build:
-      context: .
-      dockerfile: core/memory/database/Dockerfile
+    image: astron-agent/core-memory:latest
     container_name: astron-agent-core-memory
     environment:
       # Service Configuration
@@ -597,9 +580,7 @@ services:
 
   # astron-agent Tenant Service
   agent-core-tenant:
-    build:
-      context: .
-      dockerfile: core/tenant/Dockerfile
+    image: astron-agent/core-tenant:latest
     container_name: astron-agent-core-tenant
     environment:
       # Service Configuration
@@ -627,9 +608,7 @@ services:
 
   # astron-agent Workflow Service
   agent-core-workflow:
-    build:
-      context: .
-      dockerfile: core/workflow/Dockerfile
+    image: astron-agent/core-workflow:latest
     container_name: astron-agent-core-workflow
     environment:
       # Service Configuration
@@ -670,9 +649,7 @@ services:
 
   # astron-agent Console Frontend
   agent-console-frontend:
-    build:
-      context: .
-      dockerfile: console/frontend/Dockerfile
+    image: astron-agent/console-frontend:latest
     container_name: astron-agent-console-frontend
     environment:
       # API Configuration
@@ -698,9 +675,7 @@ services:
 
   # astron-agent Console Hub (Backend)
   agent-console-hub:
-    build:
-      context: .
-      dockerfile: console/backend/hub/Dockerfile
+    image: astron-agent/console-hub:latest
     container_name: astron-agent-console-hub
     environment:
       # Domain Configuration
@@ -810,4 +785,3 @@ volumes:
     driver: local
   kafka_data:
     driver: local
-

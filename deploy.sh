@@ -24,7 +24,6 @@ LOG_FILE="${SCRIPT_DIR}/deployment.log"
 
 # Default values
 SKIP_DEPS_CHECK=false
-SKIP_BUILD=false
 FORCE_RECREATE=false
 ENABLE_MONITORING=false
 PRODUCTION_MODE=false
@@ -431,11 +430,15 @@ deploy_services() {
     fi
     success "✅ Docker Compose configuration valid"
     
-    # Pull images first
+    # Pull images first (all services now use pre-built images)
     info "📥 Pulling Docker images..."
-    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" pull --quiet || {
-        warn "⚠️ Some images could not be pulled, continuing with deployment"
-    }
+    if ! docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" pull --quiet; then
+        warn "⚠️ Some images could not be pulled. This may be because:"
+        warn "   • Images haven't been built and pushed to registry yet"
+        warn "   • Network connectivity issues"
+        warn "   • Registry authentication required"
+        warn "   Continuing with deployment - services may fail to start"
+    fi
     
     # Deploy services
     COMPOSE_ARGS=()
@@ -601,10 +604,6 @@ main() {
                 ENABLE_MONITORING=true
                 shift
                 ;;
-            --no-build)
-                SKIP_BUILD=true
-                shift
-                ;;
             *)
                 error "Unknown option: $1"
                 ;;
@@ -623,6 +622,7 @@ main() {
     echo "  ✅ Check system requirements"
     echo "  ✅ Install Docker and dependencies"
     echo "  ✅ Configure environment"
+    echo "  ✅ Pull pre-built Docker images"
     echo "  ✅ Deploy 21+ integrated services"
     echo "  ✅ Set up shell aliases"
     echo "  ✅ Verify deployment"
@@ -698,4 +698,3 @@ cd "$SCRIPT_DIR"
 
 # Run main function
 main "$@"
-
