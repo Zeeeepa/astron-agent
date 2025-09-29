@@ -65,17 +65,14 @@ echo -e "${GREEN}  ✅ Scripts configured${NC}"
 
 echo -e "${BLUE}🚀 Step 3: Deploying services...${NC}"
 
-if [ -f "quick-setup.sh" ]; then
-    echo -e "  🚀 Running quick setup..."
-    echo "y" | ./quick-setup.sh || {
-        echo -e "${YELLOW}  ⚠️ Quick setup had issues, trying manual deployment...${NC}"
-        ./deploy.sh --skip-deps || {
-            echo -e "${YELLOW}  ⚠️ Automated deployment had issues, setting up manually...${NC}"
-            docker compose -f docker-compose.unified.yml --env-file .env.unified up -d
-        }
+if [ -f "deploy.sh" ]; then
+    echo -e "  🚀 Running deployment..."
+    echo "y" | ./deploy.sh || {
+        echo -e "${YELLOW}  ⚠️ Deployment had issues, trying manual approach...${NC}"
+        docker compose -f docker-compose.unified.yml --env-file .env.unified up -d
     }
 else
-    echo -e "${RED}  ❌ Quick setup script not found${NC}"
+    echo -e "${RED}  ❌ Deployment script not found${NC}"
     exit 1
 fi
 
@@ -240,4 +237,3 @@ echo -e "${PURPLE}The future of AI agents with RPA capabilities! 🚀${NC}"
 if [[ $- == *i* ]]; then
     source ~/.bashrc
 fi
-

@@ -14,17 +14,19 @@ git checkout codegen-bot/unified-deployment-1759128224
 # Make scripts executable
 chmod +x *.sh scripts/*.sh
 
-# One-command deployment (recommended)
-./quick-setup.sh
+# One-command deployment
+./deploy.sh
 ```
 
 ### 2. Alternative Manual Setup
 ```bash
-# If quick-setup fails, use manual deployment
-./deploy.sh
-
-# Or step-by-step
+# If deploy.sh fails, use manual deployment
 docker compose -f docker-compose.unified.yml --env-file .env.unified up -d
+
+# Or with specific options
+./deploy.sh --skip-deps          # Skip dependency installation
+./deploy.sh --production         # Production mode
+./deploy.sh --force-recreate     # Force recreate containers
 ```
 
 ## 🌐 Access URLs and Ports
@@ -373,4 +375,3 @@ stop
 ```
 
 This setup gives you complete control over the unified astron-agent + astron-rpa deployment with simple commands and automatic status checking! 🚀
-

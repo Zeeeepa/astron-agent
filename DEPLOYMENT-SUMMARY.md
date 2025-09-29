@@ -41,12 +41,12 @@ This comprehensive deployment package provides a complete, production-ready inte
 
 ### 🌐 Access Layer
 
-| Interface | URL | Purpose | Authentication |
-|-----------|-----|---------|----------------|
-| **Unified Proxy** | http://localhost | Single entry point | Nginx routing |
-| **RPA Platform** | http://localhost/rpa/ | Complete RPA interface | Casdoor |
-| **Agent Console** | http://localhost/agent/ | Agent management | JWT tokens |
-| **Admin Interfaces** | http://localhost/minio/ | System administration | Service-specific |
+| Interface | URL | Port | Description |
+|-----------|-----|------|-------------|
+| **Unified Proxy** | http://localhost | 80 | Single entry point |
+| **RPA Platform** | http://localhost/rpa/ | 80 | Complete RPA interface |
+| **Agent Console** | http://localhost/agent/ | 80 | Agent management |
+| **Admin Interfaces** | http://localhost/minio/ | 80 | System administration |
 
 ## 🔗 Integration Architecture
 
@@ -86,22 +86,34 @@ RPA_API_SECRET=unified-rpa-secret-key-2024
 
 ## 🚀 Deployment Options
 
-### Option 1: Quick Setup (Recommended)
+### Option 1: Standard Deployment (Recommended)
 ```bash
-# One-command deployment
-./quick-setup.sh
+# Full deployment with all features
+./deploy.sh
 ```
 
-### Option 2: Standard Deployment
+### Option 2: Deployment with Options
 ```bash
-# Full deployment with options
-./deploy.sh
+# Skip dependency installation
+./deploy.sh --skip-deps
+
+# Production mode
+./deploy.sh --production
+
+# Force recreate containers
+./deploy.sh --force-recreate
+
+# Skip Docker installation
+./deploy.sh --skip-docker
+
+# Skip shell alias setup
+./deploy.sh --skip-aliases
 ```
 
 ### Option 3: Manual Deployment
 ```bash
 # Step-by-step deployment
-docker-compose -f docker-compose.unified.yml --env-file .env.unified up -d
+docker compose -f docker-compose.unified.yml --env-file .env.unified up -d
 ```
 
 ## 📊 Management Tools
@@ -201,10 +213,11 @@ Over 50 configurable environment variables for:
 |------|---------|
 | `README-deployment.md` | Complete deployment guide |
 | `DEPLOYMENT-SUMMARY.md` | This summary document |
+| `QUICK-START-COMMANDS.md` | Command reference |
 | `.env.unified` | Environment configuration |
 | `docker-compose.unified.yml` | Service definitions |
 | `deploy.sh` | Main deployment script |
-| `quick-setup.sh` | One-command setup |
+| `setup-astron.sh` | One-command setup |
 | `scripts/health-check.sh` | Health monitoring |
 | `scripts/manage-services.sh` | Service management |
 | `nginx/nginx.conf` | Reverse proxy configuration |
@@ -246,7 +259,7 @@ Here's how the integrated platforms work together:
 
 After successful deployment, you should see:
 
-- ✅ **22+ services running** (infrastructure + RPA + agent + proxy)
+- ✅ **21+ services running** (infrastructure + RPA + agent + proxy)
 - ✅ **All health checks passing**
 - ✅ **Web interfaces accessible**
 - ✅ **API endpoints responding**
@@ -283,18 +296,9 @@ After successful deployment, you should see:
 
 ---
 
-## 🎊 Conclusion
+## 🌟 Conclusion
 
-This unified deployment provides a complete, production-ready environment that seamlessly integrates astron-agent and astron-rpa platforms. The architecture enables powerful AI agent workflows with comprehensive RPA capabilities, all managed through a single, cohesive interface.
+This unified deployment provides a complete, production-ready environment that seamlessly integrates astron-agent and astron-rpa platforms. The architecture enables powerful AI agent workflows with comprehensive RPA capabilities, all managed through a single, unified interface.
 
-**The integration is now complete and ready for use! 🚀**
-
-### Next Steps
-1. **Access the platforms** using the provided URLs
-2. **Configure authentication** in Casdoor
-3. **Create your first integrated workflow**
-4. **Set up monitoring and backups**
-5. **Customize for your specific needs**
-
-**Happy building with astron-agent + astron-rpa! 🎉**
+**The future of AI agents with RPA capabilities starts here! 🚀**
 
