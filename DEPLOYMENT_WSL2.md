@@ -80,8 +80,12 @@ This will install Docker, configure the environment, and prepare everything:
 - ✅ Installs Docker Engine and Docker Compose
 - ✅ Configures Docker daemon and user permissions
 - ✅ Creates `.env` configuration with secure passwords
+- ✅ **Builds frontend with English as default language** (5-10 minutes)
+- ✅ Updates docker-compose to use English frontend
 - ✅ Validates port availability
 - ✅ Creates helper scripts for management
+
+**⏱️ Total setup time:** 15-20 minutes (includes frontend build)
 
 **Note:** If prompted about systemd, you'll need to:
 1. Run `wsl --shutdown` in PowerShell
@@ -119,6 +123,63 @@ http://localhost
 ```
 
 🎉 **You're ready to use Astron Agent!**
+
+**Note:** The console UI will default to **English** if the frontend was built during setup. If not, you can:
+- Manually switch language using the language selector (top-right corner)
+- Build the English frontend later: `./build-frontend-en.sh`
+
+---
+
+## Language Configuration
+
+### English as Default Language
+
+The deployment scripts configure Astron Agent to default to **English**:
+
+1. **Frontend i18n:** Modified to use English as the default language
+2. **Backend Service Location:** Set to `SERVICE_LOCATION=en` in `.env`
+3. **Custom Build:** Frontend Docker image built with English defaults
+
+### Building English Frontend
+
+The `setup.sh` script automatically builds the frontend with English defaults. If you want to rebuild it manually:
+
+```bash
+./build-frontend-en.sh
+```
+
+**This will:**
+- Build a new Docker image with English i18n defaults
+- Tag it as `astron-agent-console-frontend-en:latest`
+- Take 5-10 minutes depending on your system
+
+### Verifying English Default
+
+To verify the console defaults to English:
+
+1. Open browser in **incognito/private mode** (to clear localStorage)
+2. Navigate to `http://localhost`
+3. The UI should display in English by default
+
+### Switching Languages Manually
+
+Users can always switch languages using:
+- **Language selector** in the top-right corner of the console
+- Preference is saved in browser localStorage
+- Supports: English (en) and Chinese (zh)
+
+### Skipping Frontend Build
+
+If you want to use the standard image (Chinese default) and skip the build:
+
+```bash
+# Edit setup.sh and comment out:
+#   build_frontend_english
+#   update_docker_compose
+
+# Then run setup
+./setup.sh
+```
 
 ---
 
@@ -791,4 +852,3 @@ This project is licensed under the Apache 2.0 License.
 **Developed and maintained by iFLYTEK**
 
 For questions or issues with this deployment guide, please open an issue on GitHub.
-

@@ -458,6 +458,91 @@ EOF
 }
 
 ###############################################################################
+# Build Frontend with English Defaults
+###############################################################################
+
+build_frontend_english() {
+    print_header "🏗️  Building Frontend (English Default)"
+    
+    print_info "Checking if frontend rebuild is needed..."
+    
+    # Check if the English-default image already exists locally
+    if docker image inspect astron-agent-console-frontend-en:latest &> /dev/null; then
+        print_warning "Frontend image with English defaults already exists"
+        echo ""
+        read -p "Do you want to rebuild it? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Skipping frontend rebuild"
+            return 0
+        fi
+    fi
+    
+    print_info "Building frontend Docker image with English as default language..."
+    print_info "This may take 5-10 minutes depending on your system..."
+    echo ""
+    
+    # Run the build script
+    if [ -f "build-frontend-en.sh" ]; then
+        bash build-frontend-en.sh latest || {
+            print_error "Frontend build failed"
+            print_warning "You can:"
+            print_warning "  1. Continue with the existing frontend image (Chinese default)"
+            print_warning "  2. Build manually later with: ./build-frontend-en.sh"
+            echo ""
+            read -p "Continue with existing image? (y/N) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                exit 1
+            fi
+            return 1
+        }
+        print_success "Frontend built successfully with English defaults"
+        return 0
+    else
+        print_error "build-frontend-en.sh script not found"
+        print_warning "Frontend will use default Chinese language"
+        return 1
+    fi
+}
+
+# Update docker-compose to use English frontend
+update_docker_compose() {
+    print_header "🔧 Updating Docker Compose Configuration"
+    
+    cd docker/astronAgent
+    
+    # Check if English frontend image was built
+    if docker image inspect astron-agent-console-frontend-en:latest &> /dev/null; then
+        print_info "Updating docker-compose.yaml to use English frontend..."
+        
+        # Backup original docker-compose.yaml
+        if [ ! -f docker-compose.yaml.backup ]; then
+            cp docker-compose.yaml docker-compose.yaml.backup
+            print_success "Backed up original docker-compose.yaml"
+        fi
+        
+        # Update console-frontend image
+        if grep -q "image: astron-agent-console-frontend-en:latest" docker-compose.yaml; then
+            print_info "Docker compose already configured for English frontend"
+        else
+            # Replace the image line for console-frontend
+            sed -i.tmp '/console-frontend:/,/environment:/ {
+                s|image:.*console.*|image: astron-agent-console-frontend-en:latest|
+            }' docker-compose.yaml
+            rm -f docker-compose.yaml.tmp
+            print_success "Updated docker-compose.yaml to use English frontend"
+        fi
+    else
+        print_warning "English frontend image not found, using default image"
+        print_info "The console will default to Chinese language"
+        print_info "Users can manually switch to English in the UI"
+    fi
+    
+    cd ../..
+}
+
+###############################################################################
 # Final Summary
 ###############################################################################
 
@@ -467,6 +552,15 @@ print_summary() {
     echo -e "${GREEN}✓ WSL2 environment prepared${NC}"
     echo -e "${GREEN}✓ Docker Engine installed and configured${NC}"
     echo -e "${GREEN}✓ Environment configuration created${NC}"
+    
+    # Check if English frontend was built
+    if docker image inspect astron-agent-console-frontend-en:latest &> /dev/null; then
+        echo -e "${GREEN}✓ Frontend built with English as default language${NC}"
+    else
+        echo -e "${YELLOW}⚠ Frontend using default image (Chinese default)${NC}"
+        echo -e "  ${CYAN}To build English version: ${YELLOW}./build-frontend-en.sh${NC}"
+    fi
+    
     echo -e "${GREEN}✓ Helper scripts generated${NC}"
     echo ""
     echo -e "${CYAN}Next Steps:${NC}"
@@ -474,6 +568,18 @@ print_summary() {
     echo -e "  2. Start services: ${YELLOW}./start.sh${NC}"
     echo -e "  3. Access console: ${YELLOW}http://localhost${NC}"
     echo ""
+    
+    # Language-specific notes
+    if docker image inspect astron-agent-console-frontend-en:latest &> /dev/null; then
+        echo -e "${GREEN}✓ Console UI will default to English${NC}"
+    else
+        echo -e "${CYAN}Language Note:${NC}"
+        echo -e "  The console will default to ${YELLOW}Chinese${NC}"
+        echo -e "  You can switch to English using the language selector"
+        echo -e "  Or build English version: ${YELLOW}./build-frontend-en.sh${NC}"
+        echo ""
+    fi
+    
     echo -e "${CYAN}Helper Commands:${NC}"
     echo -e "  • Check status: ${YELLOW}./status.sh${NC}"
     echo -e "  • View logs: ${YELLOW}./logs.sh [service-name]${NC}"
@@ -515,10 +621,11 @@ EOF
     verify_docker
     check_ports
     setup_environment
+    build_frontend_english
+    update_docker_compose
     create_helper_scripts
     print_summary
 }
 
 # Run main function
 main "$@"
-
