@@ -1,508 +1,344 @@
 #!/usr/bin/env bash
-###############################################################################
-# Astron Agent - Service Startup Script
-# Purpose: Starts all Astron Agent services in correct order
+
+#############################################################################
+# Astron Agent - Start Script (Enhanced for Docker Services)
+#############################################################################
+# This script starts all Astron Agent Docker services and displays access URLs
 # Usage: ./start.sh
-###############################################################################
+#############################################################################
 
 set -e  # Exit on error
+set -o pipefail  # Catch pipe errors
 
-# Color definitions
+# Color output helpers
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-# Configuration
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOCKER_COMPOSE_DIR="${PROJECT_DIR}/docker/astronAgent"
-MAX_WAIT_TIME=300  # 5 minutes max wait per service
-HEALTH_CHECK_INTERVAL=5  # Check every 5 seconds
-
-###############################################################################
-# Helper Functions
-###############################################################################
-
+# Helper functions
 print_header() {
-    echo -e "\n${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "\n${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}  ${BLUE}$1${NC}"
-    echo -e "${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}\n"
-}
-
-print_phase() {
-    echo -e "\n${MAGENTA}▶▶▶ Phase: $1${NC}\n"
+    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}\n"
 }
 
 print_success() {
     echo -e "${GREEN}✓${NC} $1"
 }
 
-print_error() {
-    echo -e "${RED}✗${NC} $1"
-}
-
 print_warning() {
     echo -e "${YELLOW}⚠${NC} $1"
 }
 
+print_error() {
+    echo -e "${RED}✗${NC} $1"
+}
+
 print_info() {
-    echo -e "${BLUE}ℹ${NC} $1"
+    echo -e "${CYAN}ℹ${NC} $1"
 }
 
-print_progress() {
-    echo -ne "${YELLOW}⏳${NC} $1\r"
+print_step() {
+    echo -e "${MAGENTA}➜${NC} $1"
 }
 
-###############################################################################
-# Pre-flight Checks
-###############################################################################
+# Show banner
+clear
+echo -e "${CYAN}"
+echo "    ╔═══════════════════════════════════════════════════════════╗"
+echo "    ║                                                           ║"
+echo "    ║            Astron Agent - Start Script                   ║"
+echo "    ║                                                           ║"
+echo "    ║         Enterprise AI Agent Development Platform          ║"
+echo "    ║                                                           ║"
+echo "    ╚═══════════════════════════════════════════════════════════╝"
+echo -e "${NC}\n"
+
+#############################################################################
+# Detect repository root and navigate to Docker directory
+#############################################################################
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+REPO_ROOT="${SCRIPT_DIR}"
+DOCKER_DIR="${REPO_ROOT}/docker/astronAgent"
+
+if [ ! -d "${DOCKER_DIR}" ]; then
+    print_error "Docker directory not found: ${DOCKER_DIR}"
+    print_info "Please run this script from the repository root"
+    exit 1
+fi
+
+cd "${DOCKER_DIR}"
+
+#############################################################################
+# Check prerequisites
+#############################################################################
 
 check_prerequisites() {
     print_header "Checking Prerequisites"
     
-    # Check if Docker is running
-    if ! docker info > /dev/null 2>&1; then
-        print_error "Docker is not running or not accessible"
-        print_info "Please ensure Docker is installed and running"
-        print_info "If you're not in the docker group, run: newgrp docker"
-        exit 1
-    fi
-    print_success "Docker is running"
-    
-    # Check if Docker Compose is available
-    if ! docker compose version > /dev/null 2>&1; then
-        print_error "Docker Compose plugin not found"
-        exit 1
-    fi
-    print_success "Docker Compose is available"
-    
-    # Check if .env file exists
-    if [ ! -f "${DOCKER_COMPOSE_DIR}/.env" ]; then
+    # Check if .env exists
+    if [ ! -f ".env" ]; then
         print_error ".env file not found"
-        print_info "Please run ./setup.sh first"
+        print_info "Please run ./setup.sh first to configure the environment"
         exit 1
     fi
-    print_success ".env configuration found"
+    print_success ".env file found"
     
-    # Check available disk space
-    available_gb=$(df -BG "${PROJECT_DIR}" | tail -1 | awk '{print $4}' | sed 's/G//')
-    if [ "$available_gb" -lt 20 ]; then
-        print_warning "Low disk space: ${available_gb}GB available"
-        print_info "Astron Agent requires at least 20GB of free space"
-        read -p "Continue anyway? (y/n): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            exit 1
-        fi
+    # Check Docker
+    if ! command -v docker &> /dev/null; then
+        print_error "Docker is not installed"
+        exit 1
+    fi
+    print_success "Docker is available"
+    
+    # Determine compose command
+    if command -v docker-compose &> /dev/null; then
+        COMPOSE_CMD="docker-compose"
+    elif docker compose version &> /dev/null 2>&1; then
+        COMPOSE_CMD="docker compose"
     else
-        print_success "Sufficient disk space: ${available_gb}GB available"
+        print_error "Docker Compose is not available"
+        exit 1
+    fi
+    export COMPOSE_CMD
+    print_success "Docker Compose: ${COMPOSE_CMD}"
+    
+    # Check Docker daemon
+    if ! docker info &> /dev/null 2>&1; then
+        print_error "Docker daemon is not running"
+        print_info "Please start Docker first"
+        exit 1
+    fi
+    print_success "Docker daemon is running"
+}
+
+#############################################################################
+# Start services
+#############################################################################
+
+start_services() {
+    print_header "Starting Services"
+    
+    print_info "Starting all Astron Agent services..."
+    print_info "This may take 5-10 minutes for first-time startup"
+    print_info "Services will start in dependency order with health checks"
+    echo ""
+    
+    # Start all services
+    if ${COMPOSE_CMD} up -d; then
+        print_success "Services started"
+    else
+        print_error "Failed to start services"
+        print_info "Check logs with: ./logs.sh"
+        exit 1
     fi
 }
 
-###############################################################################
-# Service Management Functions
-###############################################################################
+#############################################################################
+# Wait for services to be healthy
+#############################################################################
 
-wait_for_service() {
-    local service_name=$1
-    local max_wait=${2:-$MAX_WAIT_TIME}
-    local elapsed=0
+wait_for_services() {
+    print_header "Waiting for Services"
     
-    print_info "Waiting for ${service_name} to be healthy..."
+    print_info "Waiting for services to become healthy..."
+    print_info "This may take a few minutes..."
+    echo ""
     
-    while [ $elapsed -lt $max_wait ]; do
-        if docker compose ps --format json | jq -r ".[] | select(.Name | contains(\"${service_name}\")) | .Health" | grep -q "healthy"; then
-            print_success "${service_name} is healthy (${elapsed}s)"
+    # Key services to check
+    CRITICAL_SERVICES=(
+        "astron-agent-postgres"
+        "astron-agent-mysql"
+        "astron-agent-redis"
+        "astron-agent-nginx"
+    )
+    
+    MAX_WAIT=300  # 5 minutes
+    ELAPSED=0
+    CHECK_INTERVAL=10
+    
+    while [ $ELAPSED -lt $MAX_WAIT ]; do
+        ALL_HEALTHY=true
+        
+        for service in "${CRITICAL_SERVICES[@]}"; do
+            HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "${service}" 2>/dev/null || echo "no-healthcheck")
+            
+            if [ "${HEALTH}" == "healthy" ] || [ "${HEALTH}" == "no-healthcheck" ]; then
+                STATUS=$(docker inspect --format='{{.State.Status}}' "${service}" 2>/dev/null || echo "unknown")
+                if [ "${STATUS}" != "running" ]; then
+                    ALL_HEALTHY=false
+                    break
+                fi
+            else
+                ALL_HEALTHY=false
+                break
+            fi
+        done
+        
+        if [ "${ALL_HEALTHY}" = true ]; then
+            echo ""
+            print_success "All critical services are healthy!"
             return 0
         fi
         
-        # Check if service exists but isn't healthy
-        if docker compose ps --format json | jq -r ".[] | select(.Name | contains(\"${service_name}\")) | .State" | grep -q "running"; then
-            print_progress "${service_name} is starting... (${elapsed}s/${max_wait}s)"
-        else
-            print_error "${service_name} is not running"
-            docker compose logs --tail=20 "$service_name"
-            return 1
-        fi
-        
-        sleep $HEALTH_CHECK_INTERVAL
-        elapsed=$((elapsed + HEALTH_CHECK_INTERVAL))
+        echo -ne "\r${CYAN}ℹ${NC} Waiting... ${ELAPSED}s / ${MAX_WAIT}s "
+        sleep $CHECK_INTERVAL
+        ELAPSED=$((ELAPSED + CHECK_INTERVAL))
     done
     
-    print_error "${service_name} did not become healthy within ${max_wait}s"
-    docker compose logs --tail=30 "$service_name"
-    return 1
+    echo ""
+    print_warning "Timeout waiting for services to be healthy"
+    print_info "Services may still be starting up"
+    print_info "Check status with: ./status.sh"
+    print_info "Check logs with: ./logs.sh"
 }
 
-wait_for_port() {
-    local port=$1
-    local service_name=$2
-    local max_wait=${3:-60}
-    local elapsed=0
-    
-    print_info "Waiting for ${service_name} port ${port}..."
-    
-    while [ $elapsed -lt $max_wait ]; do
-        if nc -z localhost "$port" 2>/dev/null; then
-            print_success "${service_name} port ${port} is accessible"
-            return 0
-        fi
-        
-        print_progress "Waiting for ${service_name} port ${port}... (${elapsed}s/${max_wait}s)"
-        sleep 2
-        elapsed=$((elapsed + 2))
-    done
-    
-    print_warning "${service_name} port ${port} not accessible within ${max_wait}s"
-    return 1
-}
+#############################################################################
+# Get service status
+#############################################################################
 
-verify_database_ready() {
-    local db_type=$1
+get_service_status() {
+    print_header "Service Status"
     
-    if [ "$db_type" == "mysql" ]; then
-        print_info "Verifying MySQL readiness..."
-        docker compose exec -T mysql mysqladmin ping -h localhost --silent > /dev/null 2>&1
-        return $?
-    elif [ "$db_type" == "postgres" ]; then
-        print_info "Verifying PostgreSQL readiness..."
-        docker compose exec -T postgres pg_isready -U spark > /dev/null 2>&1
-        return $?
+    # Get all running containers
+    RUNNING=$(docker ps --filter "name=astron-agent-" --format "table {{.Names}}\t{{.Status}}" | grep -v NAMES | wc -l)
+    TOTAL=$(${COMPOSE_CMD} config --services | wc -l)
+    
+    print_info "Services running: ${RUNNING} / ${TOTAL}"
+    echo ""
+    
+    # Show service table
+    docker ps --filter "name=astron-agent-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | head -20
+    
+    if [ $RUNNING -lt $TOTAL ]; then
+        echo ""
+        print_warning "Not all services are running"
+        print_info "Run './status.sh' for detailed status"
+        print_info "Run './logs.sh <service-name>' to check specific service logs"
     fi
 }
 
-###############################################################################
-# Image Management
-###############################################################################
+#############################################################################
+# Display access URLs
+#############################################################################
 
-pull_images() {
-    print_header "Pulling Docker Images"
-    print_info "This may take several minutes on first run..."
-    
-    cd "$DOCKER_COMPOSE_DIR"
-    
-    # Pull images with progress
-    if docker compose pull 2>&1 | tee /tmp/docker-pull.log | grep -E "(Pulling|Downloaded|Status:)"; then
-        print_success "All images pulled successfully"
-    else
-        print_warning "Some images may have failed to pull"
-        print_info "Check /tmp/docker-pull.log for details"
-    fi
-}
-
-###############################################################################
-# Service Startup Phases
-###############################################################################
-
-start_infrastructure() {
-    print_phase "Starting Infrastructure Services"
-    
-    cd "$DOCKER_COMPOSE_DIR"
-    
-    # Start PostgreSQL
-    print_info "Starting PostgreSQL..."
-    docker compose up -d postgres
-    wait_for_service "postgres" 120
-    sleep 3
-    verify_database_ready "postgres" && print_success "PostgreSQL is ready"
-    
-    # Start MySQL
-    print_info "Starting MySQL..."
-    docker compose up -d mysql
-    wait_for_service "mysql" 120
-    sleep 3
-    verify_database_ready "mysql" && print_success "MySQL is ready"
-    
-    # Start Redis
-    print_info "Starting Redis..."
-    docker compose up -d redis
-    wait_for_service "redis" 60
-    
-    # Start Elasticsearch
-    print_info "Starting Elasticsearch..."
-    print_warning "Elasticsearch may take 2-3 minutes to initialize..."
-    docker compose up -d elasticsearch
-    wait_for_service "elasticsearch" 180
-    
-    # Verify Elasticsearch cluster
-    sleep 5
-    if curl -s http://localhost:9200/_cluster/health | jq -r '.status' | grep -qE "(green|yellow)"; then
-        print_success "Elasticsearch cluster is operational"
-    else
-        print_warning "Elasticsearch cluster status unknown"
-    fi
-    
-    # Start Kafka
-    print_info "Starting Kafka..."
-    docker compose up -d kafka
-    wait_for_service "kafka" 120
-    
-    # Start MinIO
-    print_info "Starting MinIO..."
-    docker compose up -d minio
-    wait_for_service "minio" 60
-    
-    # Create MinIO buckets
-    sleep 3
-    print_info "Configuring MinIO buckets..."
-    
-    # Get MinIO credentials from .env
-    source .env
-    
-    if command -v docker &> /dev/null; then
-        docker compose exec -T minio mc alias set local http://localhost:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} > /dev/null 2>&1 || true
-        docker compose exec -T minio mc mb local/console --ignore-existing > /dev/null 2>&1 || true
-        print_success "MinIO configured"
-    fi
-    
-    print_success "All infrastructure services are running"
-}
-
-start_core_services() {
-    print_phase "Starting Core Services"
-    
-    cd "$DOCKER_COMPOSE_DIR"
-    
-    # Start Tenant Service
-    print_info "Starting Tenant Service..."
-    docker compose up -d core-tenant
-    sleep 10  # Give tenant service time to initialize
-    print_success "Tenant service started"
-    
-    # Start Memory Database Service
-    print_info "Starting Memory Database Service..."
-    docker compose up -d core-database
-    sleep 10
-    print_success "Database service started"
-    
-    # Start RPA Plugin Service
-    print_info "Starting RPA Plugin Service..."
-    docker compose up -d core-rpa
-    sleep 8
-    print_success "RPA service started"
-    
-    # Start Link Plugin Service
-    print_info "Starting Link Plugin Service..."
-    docker compose up -d core-link
-    sleep 10
-    print_success "Link service started"
-    
-    # Start AITools Plugin Service
-    print_info "Starting AITools Plugin Service..."
-    docker compose up -d core-aitools
-    sleep 10
-    print_success "AITools service started"
-    
-    # Start Agent Service
-    print_info "Starting Agent Service..."
-    docker compose up -d core-agent
-    sleep 10
-    print_success "Agent service started"
-    
-    # Start Knowledge Service
-    print_info "Starting Knowledge Service..."
-    docker compose up -d core-knowledge
-    sleep 10
-    print_success "Knowledge service started"
-    
-    # Start Workflow Service
-    print_info "Starting Workflow Service..."
-    docker compose up -d core-workflow
-    sleep 10
-    print_success "Workflow service started"
-    
-    print_success "All core services are running"
-}
-
-start_console_services() {
-    print_phase "Starting Console Services"
-    
-    cd "$DOCKER_COMPOSE_DIR"
-    
-    # Start Console Frontend
-    print_info "Starting Console Frontend..."
-    docker compose up -d console-frontend
-    sleep 8
-    print_success "Frontend service started"
-    
-    # Start Console Hub
-    print_info "Starting Console Hub..."
-    docker compose up -d console-hub
-    sleep 10
-    print_success "Hub service started"
-    
-    # Start Nginx
-    print_info "Starting Nginx Reverse Proxy..."
-    docker compose up -d nginx
-    wait_for_service "nginx" 60
-    
-    print_success "All console services are running"
-}
-
-###############################################################################
-# Verification
-###############################################################################
-
-verify_deployment() {
-    print_header "Verifying Deployment"
-    
-    # Wait a bit for services to fully initialize
-    sleep 5
-    
-    # Check web interface
-    print_info "Checking web interface..."
-    if curl -s -o /dev/null -w "%{http_code}" http://localhost | grep -qE "(200|302)"; then
-        print_success "Web interface is accessible at http://localhost"
-    else
-        print_warning "Web interface may not be fully ready yet"
-        print_info "Try accessing http://localhost in a few moments"
-    fi
-    
-    # Check service status
-    print_info "Service Status:"
-    cd "$DOCKER_COMPOSE_DIR"
-    docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | grep -E "(Up|healthy)" | head -20
-    
-    # Count healthy services
-    local total_services=$(docker compose ps --format json | jq -s 'length')
-    local healthy_services=$(docker compose ps --format json | jq -r '.[] | select(.Health == "healthy") | .Name' | wc -l)
-    local running_services=$(docker compose ps --format json | jq -r '.[] | select(.State == "running") | .Name' | wc -l)
-    
-    print_info "Services: ${running_services}/${total_services} running, ${healthy_services} healthy"
-    
-    if [ "$running_services" -eq "$total_services" ]; then
-        print_success "All services are running"
-    else
-        print_warning "Some services may not have started correctly"
-    fi
-}
-
-###############################################################################
-# Display Access Information
-###############################################################################
-
-show_access_info() {
+display_urls() {
     print_header "Access Information"
     
-    cd "$DOCKER_COMPOSE_DIR"
-    source .env
+    # Get host IP for URLs
+    if command -v hostname &> /dev/null; then
+        HOSTNAME=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+    else
+        HOSTNAME="localhost"
+    fi
     
-    echo -e "${CYAN}Web Interface:${NC}"
-    echo -e "  URL: ${GREEN}http://localhost${NC}"
-    echo -e "  Port: ${GREEN}${EXPOSE_NGINX_PORT:-80}${NC}"
+    # Read ports from .env
+    source .env 2>/dev/null || true
+    
+    NGINX_PORT=${EXPOSE_NGINX_PORT:-80}
+    MINIO_PORT=${EXPOSE_MINIO_PORT:-19000}
+    MINIO_CONSOLE_PORT=${EXPOSE_MINIO_CONSOLE_PORT:-19001}
+    KAFKA_PORT=${EXPOSE_KAFKA_PORT:-9092}
+    
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}  🎉 Astron Agent is Ready!${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
     
-    echo -e "${CYAN}MinIO Console:${NC}"
-    echo -e "  URL: ${GREEN}http://localhost:${EXPOSE_MINIO_CONSOLE_PORT:-9001}${NC}"
-    echo -e "  Username: ${GREEN}${MINIO_ROOT_USER:-minioadmin}${NC}"
-    echo -e "  Password: ${GREEN}[Check .env file]${NC}"
+    echo -e "${CYAN}🌐 Main Console:${NC}"
+    if [ "${NGINX_PORT}" == "80" ]; then
+        echo -e "   ${GREEN}➜${NC} ${BLUE}http://${HOSTNAME}${NC}"
+        echo -e "   ${GREEN}➜${NC} ${BLUE}http://localhost${NC}"
+    else
+        echo -e "   ${GREEN}➜${NC} ${BLUE}http://${HOSTNAME}:${NGINX_PORT}${NC}"
+        echo -e "   ${GREEN}➜${NC} ${BLUE}http://localhost:${NGINX_PORT}${NC}"
+    fi
     echo ""
     
-    echo -e "${CYAN}Service Ports:${NC}"
-    echo -e "  Nginx (Web): ${GREEN}${EXPOSE_NGINX_PORT:-80}${NC}"
-    echo -e "  Kafka: ${GREEN}${EXPOSE_KAFKA_PORT:-9092}${NC}"
-    echo -e "  MinIO API: ${GREEN}${EXPOSE_MINIO_PORT:-9000}${NC}"
+    echo -e "${CYAN}🗄️  MinIO Console (Object Storage):${NC}"
+    echo -e "   ${GREEN}➜${NC} ${BLUE}http://${HOSTNAME}:${MINIO_CONSOLE_PORT}${NC}"
+    echo -e "   ${GREEN}➜${NC} ${BLUE}http://localhost:${MINIO_CONSOLE_PORT}${NC}"
+    echo -e "   ${YELLOW}📝${NC} Username: ${MINIO_ROOT_USER:-minioadmin}"
+    echo -e "   ${YELLOW}📝${NC} Password: ${MINIO_ROOT_PASSWORD:-minioadmin123}"
     echo ""
     
-    echo -e "${CYAN}Database Credentials:${NC}"
-    echo -e "  PostgreSQL: postgres:5432 (user: ${POSTGRES_USER:-spark})"
-    echo -e "  MySQL: mysql:3306 (user: ${MYSQL_USER:-root})"
-    echo -e "  Redis: redis:6379"
-    echo -e "  ${YELLOW}Note: Passwords are stored in .env file${NC}"
+    echo -e "${CYAN}📊 Service Endpoints:${NC}"
+    echo -e "   ${BLUE}•${NC} Kafka: ${BLUE}localhost:${KAFKA_PORT}${NC}"
+    echo -e "   ${BLUE}•${NC} MySQL: ${BLUE}localhost:3306${NC}"
+    echo -e "   ${BLUE}•${NC} PostgreSQL: ${BLUE}localhost:5432${NC}"
+    echo -e "   ${BLUE}•${NC} Redis: ${BLUE}localhost:6379${NC}"
+    echo -e "   ${BLUE}•${NC} Elasticsearch: ${BLUE}localhost:9200${NC}"
+    echo -e "   ${BLUE}•${NC} MinIO API: ${BLUE}localhost:${MINIO_PORT}${NC}"
     echo ""
     
-    echo -e "${CYAN}Useful Commands:${NC}"
-    echo -e "  View status: ${YELLOW}./status.sh${NC}"
-    echo -e "  View logs: ${YELLOW}./logs.sh [service]${NC}"
-    echo -e "  Stop services: ${YELLOW}./stop.sh${NC}"
-    echo -e "  Restart: ${YELLOW}./start.sh${NC}"
+    echo -e "${CYAN}🔧 Management Commands:${NC}"
+    echo -e "   ${BLUE}•${NC} Check status: ${YELLOW}./status.sh${NC}"
+    echo -e "   ${BLUE}•${NC} View logs: ${YELLOW}./logs.sh${NC}"
+    echo -e "   ${BLUE}•${NC} View specific service: ${YELLOW}./logs.sh <service-name>${NC}"
+    echo -e "   ${BLUE}•${NC} Stop services: ${YELLOW}./stop.sh${NC}"
+    echo -e "   ${BLUE}•${NC} Restart services: ${YELLOW}./start.sh${NC}"
     echo ""
     
-    echo -e "${CYAN}Configuration:${NC}"
-    echo -e "  Location: ${YELLOW}${DOCKER_COMPOSE_DIR}/.env${NC}"
-    echo -e "  Backup: ${YELLOW}${DOCKER_COMPOSE_DIR}/.env.backup.*${NC}"
+    echo -e "${CYAN}📚 Documentation:${NC}"
+    echo -e "   ${BLUE}•${NC} Deployment Guide: ${YELLOW}DEPLOYMENT_WSL2.md${NC}"
+    echo -e "   ${BLUE}•${NC} Chinese Guide: ${YELLOW}docker/DEPLOYMENT_GUIDE_zh.md${NC}"
+    echo -e "   ${BLUE}•${NC} Verification Report: ${YELLOW}VERIFICATION_REPORT.md${NC}"
+    echo ""
+    
+    echo -e "${CYAN}💡 Tips:${NC}"
+    echo -e "   ${BLUE}•${NC} First-time login may require account creation"
+    echo -e "   ${BLUE}•${NC} Console UI defaults to ${GREEN}English${NC}"
+    echo -e "   ${BLUE}•${NC} Use language selector to switch to Chinese"
+    echo -e "   ${BLUE}•${NC} Check ${YELLOW}.env${NC} file for service credentials"
+    echo ""
+    
+    echo -e "${YELLOW}⚠${NC}  ${CYAN}Important:${NC}"
+    echo -e "   ${BLUE}•${NC} Services run in background - use ${YELLOW}./stop.sh${NC} to stop"
+    echo -e "   ${BLUE}•${NC} Data persists in Docker volumes"
+    echo -e "   ${BLUE}•${NC} Run ${YELLOW}./start.sh${NC} after WSL2 restart"
     echo ""
 }
 
-###############################################################################
-# Error Handling
-###############################################################################
+#############################################################################
+# WSL2 Auto-start Helper
+#############################################################################
 
-handle_error() {
-    local exit_code=$?
-    local line_number=$1
-    
-    print_header "Deployment Error"
-    print_error "An error occurred during deployment (exit code: ${exit_code})"
-    print_info "Error at line: ${line_number}"
-    echo ""
-    print_info "Troubleshooting steps:"
-    echo "  1. Check service logs: ./logs.sh"
-    echo "  2. Check specific service: docker compose logs [service-name]"
-    echo "  3. Verify .env configuration"
-    echo "  4. Check disk space: df -h"
-    echo "  5. Check Docker status: docker info"
-    echo ""
-    print_info "To retry deployment:"
-    echo "  1. Stop services: ./stop.sh"
-    echo "  2. Review error messages above"
-    echo "  3. Fix configuration if needed"
-    echo "  4. Run: ./start.sh"
-    echo ""
-    
-    cd "$DOCKER_COMPOSE_DIR"
-    print_info "Current service status:"
-    docker compose ps
-    
-    exit "$exit_code"
+suggest_autostart() {
+    if [ -f /proc/sys/fs/binfmt_misc/WSLInterop ]; then
+        echo -e "${CYAN}💡 WSL2 Auto-Start Tip:${NC}"
+        echo ""
+        echo -e "To automatically start services when WSL2 starts, add this to your ${YELLOW}~/.bashrc${NC}:"
+        echo ""
+        echo -e "${BLUE}  # Auto-start Astron Agent"
+        echo -e "  if [ -f \"${REPO_ROOT}/start.sh\" ]; then"
+        echo -e "    cd \"${REPO_ROOT}\" && ./start.sh"
+        echo -e "  fi${NC}"
+        echo ""
+        echo -e "Or manually run ${YELLOW}./start.sh${NC} each time you start WSL2"
+        echo ""
+    fi
 }
 
-trap 'handle_error ${LINENO}' ERR
-
-###############################################################################
+#############################################################################
 # Main Execution
-###############################################################################
+#############################################################################
 
 main() {
-    clear
-    echo -e "${CYAN}"
-    cat << "EOF"
-    ╔═══════════════════════════════════════════════════════════╗
-    ║                                                           ║
-    ║           Astron Agent - Deployment Script               ║
-    ║                                                           ║
-    ║         Starting Enterprise AI Agent Platform            ║
-    ║                                                           ║
-    ╚═══════════════════════════════════════════════════════════╝
-EOF
-    echo -e "${NC}"
-    
-    local start_time=$(date +%s)
-    
     check_prerequisites
-    pull_images
-    start_infrastructure
-    start_core_services
-    start_console_services
-    verify_deployment
-    show_access_info
-    
-    local end_time=$(date +%s)
-    local duration=$((end_time - start_time))
-    local minutes=$((duration / 60))
-    local seconds=$((duration % 60))
-    
-    print_header "Deployment Complete! 🎉"
-    print_success "Total deployment time: ${minutes}m ${seconds}s"
-    echo ""
-    echo -e "${GREEN}Astron Agent is now running!${NC}"
-    echo -e "Access the console at: ${CYAN}http://localhost${NC}"
-    echo ""
+    start_services
+    wait_for_services
+    get_service_status
+    display_urls
+    suggest_autostart
 }
 
 # Run main function
-main "$@"
+main
+
+exit 0
 
