@@ -126,7 +126,7 @@ http://localhost
 
 **Note:** The console UI will default to **English** if the frontend was built during setup. If not, you can:
 - Manually switch language using the language selector (top-right corner)
-- Build the English frontend later: `./build-frontend-en.sh`
+- Run setup again to build the English frontend: `./setup.sh`
 
 ---
 
@@ -142,16 +142,13 @@ The deployment scripts configure Astron Agent to default to **English**:
 
 ### Building English Frontend
 
-The `setup.sh` script automatically builds the frontend with English defaults. If you want to rebuild it manually:
+The `setup.sh` script automatically builds the frontend with English defaults during the setup process.
 
-```bash
-./build-frontend-en.sh
-```
-
-**This will:**
-- Build a new Docker image with English i18n defaults
-- Tag it as `astron-agent-console-frontend-en:latest`
-- Take 5-10 minutes depending on your system
+**The build process:**
+- Creates a Docker image with English i18n defaults
+- Tags it as `astron-agent-console-frontend-en:latest`
+- Takes 5-10 minutes depending on your system
+- Is fully integrated into the setup workflow
 
 ### Verifying English Default
 

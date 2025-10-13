@@ -464,10 +464,21 @@ EOF
 build_frontend_english() {
     print_header "🏗️  Building Frontend (English Default)"
     
+    # Docker image configuration
+    local IMAGE_NAME="astron-agent-console-frontend-en"
+    local IMAGE_TAG="latest"
+    local FULL_IMAGE_NAME="${IMAGE_NAME}:${IMAGE_TAG}"
+    
+    # Build metadata
+    local VERSION="${IMAGE_TAG}"
+    local GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    local BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local PLATFORM="linux/amd64"  # Build for current platform only in setup
+    
     print_info "Checking if frontend rebuild is needed..."
     
     # Check if the English-default image already exists locally
-    if docker image inspect astron-agent-console-frontend-en:latest &> /dev/null; then
+    if docker image inspect "${FULL_IMAGE_NAME}" &> /dev/null; then
         print_warning "Frontend image with English defaults already exists"
         echo ""
         read -p "Do you want to rebuild it? (y/N) " -n 1 -r
@@ -478,30 +489,81 @@ build_frontend_english() {
         fi
     fi
     
+    # Pre-flight checks
+    print_info "Running pre-flight checks..."
+    
+    # Check if Dockerfile exists
+    if [ ! -f "console/frontend/Dockerfile" ]; then
+        print_error "Dockerfile not found at console/frontend/Dockerfile"
+        print_warning "Frontend will use default image (Chinese default)"
+        return 1
+    fi
+    
+    # Check if i18n modification was applied
+    if ! grep -q "fallbackLng: 'en'" console/frontend/src/i18n/index.ts; then
+        print_warning "i18n default language is not set to English"
+        print_info "The frontend will still default to Chinese"
+        echo ""
+        read -p "Do you want to continue anyway? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Build cancelled"
+            return 1
+        fi
+    else
+        print_success "i18n configured for English default"
+    fi
+    
+    # Enable Docker BuildKit for faster builds
+    export DOCKER_BUILDKIT=1
+    
     print_info "Building frontend Docker image with English as default language..."
+    print_info "Image: ${FULL_IMAGE_NAME}"
+    print_info "Version: ${VERSION}"
+    print_info "Git commit: ${GIT_COMMIT}"
+    print_info "Platform: ${PLATFORM}"
     print_info "This may take 5-10 minutes depending on your system..."
     echo ""
     
-    # Run the build script
-    if [ -f "build-frontend-en.sh" ]; then
-        bash build-frontend-en.sh latest || {
-            print_error "Frontend build failed"
-            print_warning "You can:"
-            print_warning "  1. Continue with the existing frontend image (Chinese default)"
-            print_warning "  2. Build manually later with: ./build-frontend-en.sh"
-            echo ""
-            read -p "Continue with existing image? (y/N) " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                exit 1
-            fi
+    # Build the Docker image
+    if docker build \
+        --platform "${PLATFORM}" \
+        --build-arg VERSION="${VERSION}" \
+        --build-arg GIT_COMMIT="${GIT_COMMIT}" \
+        --build-arg BUILD_TIME="${BUILD_TIME}" \
+        -t "${FULL_IMAGE_NAME}" \
+        -f console/frontend/Dockerfile \
+        . 2>&1 | tee /tmp/frontend-build.log; then
+        
+        print_success "Frontend image built successfully"
+        
+        # Verify build
+        if docker image inspect "${FULL_IMAGE_NAME}" &> /dev/null; then
+            local IMAGE_SIZE=$(docker image inspect "${FULL_IMAGE_NAME}" --format='{{.Size}}' | awk '{print $1/1024/1024}')
+            print_success "Image verified: ${FULL_IMAGE_NAME}"
+            print_info "Image size: ${IMAGE_SIZE} MB"
+            
+            # Create additional tags
+            docker tag "${FULL_IMAGE_NAME}" "${IMAGE_NAME}:${GIT_COMMIT}" 2>/dev/null || true
+            docker tag "${FULL_IMAGE_NAME}" "${IMAGE_NAME}:$(date +%Y%m%d)" 2>/dev/null || true
+            
+            return 0
+        else
+            print_error "Image verification failed"
             return 1
-        }
-        print_success "Frontend built successfully with English defaults"
-        return 0
+        fi
     else
-        print_error "build-frontend-en.sh script not found"
-        print_warning "Frontend will use default Chinese language"
+        print_error "Frontend build failed"
+        print_warning "Build log saved to: /tmp/frontend-build.log"
+        print_warning "You can:"
+        print_warning "  1. Continue with the existing frontend image (Chinese default)"
+        print_warning "  2. Review the build log and try again"
+        echo ""
+        read -p "Continue with existing image? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
         return 1
     fi
 }
