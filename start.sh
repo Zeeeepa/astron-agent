@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
 #############################################################################
-# Astron Agent - Start Script (Enhanced for Docker Services)
+# Astron Agent - Start Script (Enhanced with Health Monitoring)
 #############################################################################
-# This script starts all Astron Agent Docker services and displays access URLs
-# Usage: ./start.sh
+# This script starts all Astron Agent Docker services with continuous monitoring
+# Usage: ./start.sh [--watch]
 #############################################################################
 
 set -e  # Exit on error
@@ -17,7 +17,14 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
+GRAY='\033[0;90m'
 NC='\033[0m' # No Color
+
+# Watch mode flag
+WATCH_MODE=false
+if [[ "$1" == "--watch" ]]; then
+    WATCH_MODE=true
+fi
 
 # Helper functions
 print_header() {
@@ -53,7 +60,7 @@ echo "    ╔══════════════════════�
 echo "    ║                                                           ║"
 echo "    ║            Astron Agent - Start Script                   ║"
 echo "    ║                                                           ║"
-echo "    ║         Enterprise AI Agent Development Platform          ║"
+echo "    ║         with Real-Time Health Monitoring                  ║"
 echo "    ║                                                           ║"
 echo "    ╚═══════════════════════════════════════════════════════════╝"
 echo -e "${NC}\n"
@@ -194,32 +201,91 @@ wait_for_services() {
     echo ""
     print_warning "Timeout waiting for services to be healthy"
     print_info "Services may still be starting up"
-    print_info "Check status with: ./status.sh"
-    print_info "Check logs with: ./logs.sh"
+    print_info "Check status with: status-agent or ./status.sh"
+    print_info "Check logs with: logs-agent or ./logs.sh"
 }
 
 #############################################################################
-# Get service status
+# Get detailed service status
 #############################################################################
 
 get_service_status() {
     print_header "Service Status"
     
-    # Get all running containers
-    RUNNING=$(docker ps --filter "name=astron-agent-" --format "table {{.Names}}\t{{.Status}}" | grep -v NAMES | wc -l)
-    TOTAL=$(${COMPOSE_CMD} config --services | wc -l)
+    # Source .env for port configuration
+    source .env 2>/dev/null || true
     
-    print_info "Services running: ${RUNNING} / ${TOTAL}"
+    # Get all containers
+    local ALL_CONTAINERS=$(docker ps -a --filter "name=astron-agent-" --format "{{.Names}}")
+    local RUNNING_CONTAINERS=$(docker ps --filter "name=astron-agent-" --format "{{.Names}}")
+    
+    local TOTAL=$(echo "$ALL_CONTAINERS" | wc -l)
+    local RUNNING=$(echo "$RUNNING_CONTAINERS" | wc -l)
+    
+    echo -e "${CYAN}Overview:${NC} ${GREEN}${RUNNING}${NC} / ${TOTAL} services running"
     echo ""
     
-    # Show service table
-    docker ps --filter "name=astron-agent-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | head -20
+    # Show detailed status for each service
+    echo -e "${CYAN}Service Details:${NC}"
+    echo ""
     
-    if [ $RUNNING -lt $TOTAL ]; then
-        echo ""
-        print_warning "Not all services are running"
-        print_info "Run './status.sh' for detailed status"
-        print_info "Run './logs.sh <service-name>' to check specific service logs"
+    # Infrastructure services
+    echo -e "${MAGENTA}Infrastructure Services:${NC}"
+    check_service_health "astron-agent-postgres" "PostgreSQL"
+    check_service_health "astron-agent-mysql" "MySQL"
+    check_service_health "astron-agent-redis" "Redis"
+    check_service_health "astron-agent-elasticsearch" "Elasticsearch"
+    check_service_health "astron-agent-kafka" "Kafka"
+    check_service_health "astron-agent-minio" "MinIO"
+    echo ""
+    
+    # Core services
+    echo -e "${MAGENTA}Core Services:${NC}"
+    check_service_health "astron-agent-core-tenant" "Tenant Service"
+    check_service_health "astron-agent-core-database" "Database Service"
+    check_service_health "astron-agent-core-rpa" "RPA Service"
+    check_service_health "astron-agent-core-link" "Link Service"
+    check_service_health "astron-agent-core-aitools" "AI Tools Service"
+    check_service_health "astron-agent-core-agent" "Agent Service"
+    check_service_health "astron-agent-core-knowledge" "Knowledge Service"
+    check_service_health "astron-agent-core-workflow" "Workflow Service"
+    echo ""
+    
+    # Console services
+    echo -e "${MAGENTA}Console Services:${NC}"
+    check_service_health "astron-agent-nginx" "Nginx Gateway"
+    check_service_health "astron-agent-console-frontend" "Frontend"
+    check_service_health "astron-agent-console-hub" "Hub"
+    echo ""
+}
+
+#############################################################################
+# Check individual service health
+#############################################################################
+
+check_service_health() {
+    local CONTAINER_NAME=$1
+    local DISPLAY_NAME=$2
+    
+    if docker ps --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"; then
+        local STATUS=$(docker inspect --format='{{.State.Status}}' "${CONTAINER_NAME}" 2>/dev/null)
+        local HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "${CONTAINER_NAME}" 2>/dev/null || echo "no-check")
+        
+        if [ "${STATUS}" == "running" ]; then
+            if [ "${HEALTH}" == "healthy" ]; then
+                echo -e "  ${GREEN}●${NC} ${DISPLAY_NAME} - ${GREEN}Running (Healthy)${NC}"
+            elif [ "${HEALTH}" == "starting" ]; then
+                echo -e "  ${YELLOW}◐${NC} ${DISPLAY_NAME} - ${YELLOW}Starting...${NC}"
+            elif [ "${HEALTH}" == "unhealthy" ]; then
+                echo -e "  ${RED}●${NC} ${DISPLAY_NAME} - ${RED}Unhealthy${NC}"
+            else
+                echo -e "  ${GREEN}●${NC} ${DISPLAY_NAME} - ${GREEN}Running${NC}"
+            fi
+        else
+            echo -e "  ${RED}○${NC} ${DISPLAY_NAME} - ${GRAY}${STATUS}${NC}"
+        fi
+    else
+        echo -e "  ${GRAY}○${NC} ${DISPLAY_NAME} - ${GRAY}Not Running${NC}"
     fi
 }
 
@@ -277,51 +343,73 @@ display_urls() {
     echo ""
     
     echo -e "${CYAN}🔧 Management Commands:${NC}"
-    echo -e "   ${BLUE}•${NC} Check status: ${YELLOW}./status.sh${NC}"
-    echo -e "   ${BLUE}•${NC} View logs: ${YELLOW}./logs.sh${NC}"
-    echo -e "   ${BLUE}•${NC} View specific service: ${YELLOW}./logs.sh <service-name>${NC}"
-    echo -e "   ${BLUE}•${NC} Stop services: ${YELLOW}./stop.sh${NC}"
-    echo -e "   ${BLUE}•${NC} Restart services: ${YELLOW}./start.sh${NC}"
+    if command -v start-agent &> /dev/null 2>&1 || alias start-agent &> /dev/null 2>&1; then
+        echo -e "   ${BLUE}•${NC} Check status: ${YELLOW}status-agent${NC}"
+        echo -e "   ${BLUE}•${NC} View logs: ${YELLOW}logs-agent${NC}"
+        echo -e "   ${BLUE}•${NC} View specific service: ${YELLOW}logs-agent <service-name>${NC}"
+        echo -e "   ${BLUE}•${NC} Stop services: ${YELLOW}stop-agent${NC}"
+        echo -e "   ${BLUE}•${NC} Restart services: ${YELLOW}restart-agent${NC}"
+    else
+        echo -e "   ${BLUE}•${NC} Check status: ${YELLOW}./status.sh${NC}"
+        echo -e "   ${BLUE}•${NC} View logs: ${YELLOW}./logs.sh${NC}"
+        echo -e "   ${BLUE}•${NC} View specific service: ${YELLOW}./logs.sh <service-name>${NC}"
+        echo -e "   ${BLUE}•${NC} Stop services: ${YELLOW}./stop.sh${NC}"
+        echo -e "   ${BLUE}•${NC} Restart services: ${YELLOW}./start.sh${NC}"
+    fi
     echo ""
     
     echo -e "${CYAN}📚 Documentation:${NC}"
     echo -e "   ${BLUE}•${NC} Deployment Guide: ${YELLOW}DEPLOYMENT_WSL2.md${NC}"
     echo -e "   ${BLUE}•${NC} Chinese Guide: ${YELLOW}docker/DEPLOYMENT_GUIDE_zh.md${NC}"
-    echo -e "   ${BLUE}•${NC} Verification Report: ${YELLOW}VERIFICATION_REPORT.md${NC}"
     echo ""
     
     echo -e "${CYAN}💡 Tips:${NC}"
-    echo -e "   ${BLUE}•${NC} First-time login may require account creation"
     echo -e "   ${BLUE}•${NC} Console UI defaults to ${GREEN}English${NC}"
     echo -e "   ${BLUE}•${NC} Use language selector to switch to Chinese"
     echo -e "   ${BLUE}•${NC} Check ${YELLOW}.env${NC} file for service credentials"
-    echo ""
-    
-    echo -e "${YELLOW}⚠${NC}  ${CYAN}Important:${NC}"
-    echo -e "   ${BLUE}•${NC} Services run in background - use ${YELLOW}./stop.sh${NC} to stop"
-    echo -e "   ${BLUE}•${NC} Data persists in Docker volumes"
-    echo -e "   ${BLUE}•${NC} Run ${YELLOW}./start.sh${NC} after WSL2 restart"
+    echo -e "   ${BLUE}•${NC} Services persist after WSL2 restart"
     echo ""
 }
 
 #############################################################################
-# WSL2 Auto-start Helper
+# Continuous health monitoring (watch mode)
 #############################################################################
 
-suggest_autostart() {
-    if [ -f /proc/sys/fs/binfmt_misc/WSLInterop ]; then
-        echo -e "${CYAN}💡 WSL2 Auto-Start Tip:${NC}"
+watch_services() {
+    print_header "Continuous Health Monitoring"
+    
+    print_info "Monitoring services in real-time (Press Ctrl+C to exit)"
+    echo ""
+    
+    while true; do
+        clear
+        echo -e "${CYAN}"
+        echo "    ╔═══════════════════════════════════════════════════════════╗"
+        echo "    ║         Astron Agent - Real-Time Health Monitor          ║"
+        echo "    ║                  Press Ctrl+C to exit                     ║"
+        echo "    ╚═══════════════════════════════════════════════════════════╝"
+        echo -e "${NC}\n"
+        
+        # Show timestamp
+        echo -e "${GRAY}Last updated: $(date '+%Y-%m-%d %H:%M:%S')${NC}"
         echo ""
-        echo -e "To automatically start services when WSL2 starts, add this to your ${YELLOW}~/.bashrc${NC}:"
+        
+        # Get service status
+        get_service_status
+        
+        # Show quick stats
+        source .env 2>/dev/null || true
+        NGINX_PORT=${EXPOSE_NGINX_PORT:-80}
+        
+        echo -e "${CYAN}Quick Access:${NC}"
+        echo -e "   🌐 Console: ${BLUE}http://localhost${NC}"
+        echo -e "   📊 Status: ${YELLOW}status-agent${NC} or ${YELLOW}./status.sh${NC}"
+        echo -e "   📝 Logs: ${YELLOW}logs-agent${NC} or ${YELLOW}./logs.sh${NC}"
         echo ""
-        echo -e "${BLUE}  # Auto-start Astron Agent"
-        echo -e "  if [ -f \"${REPO_ROOT}/start.sh\" ]; then"
-        echo -e "    cd \"${REPO_ROOT}\" && ./start.sh"
-        echo -e "  fi${NC}"
-        echo ""
-        echo -e "Or manually run ${YELLOW}./start.sh${NC} each time you start WSL2"
-        echo ""
-    fi
+        
+        # Wait before refresh
+        sleep 5
+    done
 }
 
 #############################################################################
@@ -334,7 +422,10 @@ main() {
     wait_for_services
     get_service_status
     display_urls
-    suggest_autostart
+    
+    if [ "$WATCH_MODE" = true ]; then
+        watch_services
+    fi
 }
 
 # Run main function

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 #############################################################################
-# Astron Agent - WSL2 Setup Script (Enhanced for Docker Deployment)
+# Astron Agent - WSL2 Setup Script (Enhanced with Auto-Start & Aliases)
 #############################################################################
 # This script prepares and configures the Astron Agent platform for deployment
 # Usage: ./setup.sh
@@ -54,6 +54,7 @@ echo "    ║                                                           ║"
 echo "    ║            Astron Agent - Setup Script                   ║"
 echo "    ║                                                           ║"
 echo "    ║         Enterprise AI Agent Development Platform          ║"
+echo "    ║          with Auto-Start & Alias Integration              ║"
 echo "    ║                                                           ║"
 echo "    ╚═══════════════════════════════════════════════════════════╝"
 echo -e "${NC}\n"
@@ -406,6 +407,90 @@ EOF
 }
 
 #############################################################################
+# Setup Bash Aliases and Auto-Start
+#############################################################################
+
+setup_bashrc_integration() {
+    print_header "Setting Up Shell Integration"
+    
+    BASHRC="${HOME}/.bashrc"
+    MARKER_START="# >>> Astron Agent Integration >>>"
+    MARKER_END="# <<< Astron Agent Integration <<<"
+    
+    # Check if already integrated
+    if grep -q "${MARKER_START}" "${BASHRC}" 2>/dev/null; then
+        print_warning "Astron Agent already integrated in ${BASHRC}"
+        echo ""
+        read -p "Do you want to update the integration? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Skipping bashrc integration"
+            return 0
+        fi
+        
+        # Remove old integration
+        sed -i "/${MARKER_START}/,/${MARKER_END}/d" "${BASHRC}"
+        print_success "Removed old integration"
+    fi
+    
+    print_info "Adding Astron Agent integration to ${BASHRC}"
+    
+    # Create integration block
+    cat >> "${BASHRC}" << EOF
+
+${MARKER_START}
+# Astron Agent - Auto-generated integration
+# Repository: ${REPO_ROOT}
+
+# Environment variables
+export ASTRON_AGENT_HOME="${REPO_ROOT}"
+
+# Aliases for easy management
+alias start-agent='cd "\${ASTRON_AGENT_HOME}" && ./start.sh'
+alias stop-agent='cd "\${ASTRON_AGENT_HOME}" && ./stop.sh'
+alias status-agent='cd "\${ASTRON_AGENT_HOME}" && ./status.sh'
+alias logs-agent='cd "\${ASTRON_AGENT_HOME}" && ./logs.sh'
+alias restart-agent='cd "\${ASTRON_AGENT_HOME}" && ./stop.sh && sleep 2 && ./start.sh'
+
+# Welcome message on shell start
+if [ -t 1 ]; then
+    echo ""
+    echo -e "\033[0;36m╔══════════════════════════════════════════════════════════╗\033[0m"
+    echo -e "\033[0;36m║\033[0m  \033[0;32m🤖 Astron Agent Commands Available\033[0m"
+    echo -e "\033[0;36m╚══════════════════════════════════════════════════════════╝\033[0m"
+    echo -e "\033[1;33m  start agent\033[0m    = \033[0;34mstart-agent\033[0m   → Start Astron Agent"
+    echo -e "\033[1;33m  stop agent\033[0m     = \033[0;34mstop-agent\033[0m    → Stop all services"
+    echo -e "\033[1;33m  status agent\033[0m   = \033[0;34mstatus-agent\033[0m  → Check service status"
+    echo -e "\033[1;33m  logs agent\033[0m     = \033[0;34mlogs-agent\033[0m    → View service logs"
+    echo -e "\033[1;33m  restart agent\033[0m  = \033[0;34mrestart-agent\033[0m → Restart all services"
+    echo ""
+fi
+
+# Optional: Auto-start on WSL2 boot (uncomment to enable)
+# if [ -f "\${ASTRON_AGENT_HOME}/docker/astronAgent/.env" ]; then
+#     if ! docker ps --filter "name=astron-agent-" --format "{{.Names}}" | grep -q "astron-agent-"; then
+#         echo -e "\033[0;33m⚡ Auto-starting Astron Agent...\033[0m"
+#         start-agent
+#     fi
+# fi
+${MARKER_END}
+EOF
+    
+    print_success "Integration added to ${BASHRC}"
+    echo ""
+    print_info "Available commands after restart:"
+    echo -e "  ${YELLOW}start-agent${NC}    - Start Astron Agent"
+    echo -e "  ${YELLOW}stop-agent${NC}     - Stop all services"
+    echo -e "  ${YELLOW}status-agent${NC}   - Check service status"
+    echo -e "  ${YELLOW}logs-agent${NC}     - View service logs"
+    echo -e "  ${YELLOW}restart-agent${NC}  - Restart all services"
+    echo ""
+    print_info "To enable auto-start on WSL2 boot:"
+    print_info "  Edit ~/.bashrc and uncomment the auto-start section"
+    echo ""
+}
+
+#############################################################################
 # Print Summary
 #############################################################################
 
@@ -419,32 +504,47 @@ print_summary() {
     echo -e "   ${BLUE}•${NC} Docker directory: ${DOCKER_DIR}"
     echo -e "   ${BLUE}•${NC} Environment file: ${DOCKER_DIR}/.env"
     echo -e "   ${BLUE}•${NC} Docker Compose: ${COMPOSE_CMD}"
+    echo -e "   ${BLUE}•${NC} Shell integration: ~/.bashrc"
     echo ""
     echo -e "${CYAN}🚀 Next Steps:${NC}"
     echo ""
-    echo -e "   ${YELLOW}1.${NC} Review and customize the environment configuration:"
+    echo -e "   ${YELLOW}1.${NC} Reload your shell to activate aliases:"
+    echo -e "      ${BLUE}source ~/.bashrc${NC}"
+    echo ""
+    echo -e "   ${YELLOW}2.${NC} Optional: Review and customize environment:"
     echo -e "      ${BLUE}vim ${DOCKER_DIR}/.env${NC}"
     echo ""
-    echo -e "   ${YELLOW}2.${NC} Start all services:"
+    echo -e "   ${YELLOW}3.${NC} Start services using new alias:"
+    echo -e "      ${BLUE}start-agent${NC}"
+    echo -e "      ${GRAY}or${NC}"
     echo -e "      ${BLUE}./start.sh${NC}"
     echo ""
-    echo -e "   ${YELLOW}3.${NC} Access the console:"
+    echo -e "   ${YELLOW}4.${NC} Access the console:"
     echo -e "      ${BLUE}http://localhost${NC}"
     echo ""
-    echo -e "${CYAN}📚 Available Commands:${NC}"
-    echo -e "   ${BLUE}•${NC} ./start.sh  - Start all services"
-    echo -e "   ${BLUE}•${NC} ./stop.sh   - Stop all services"
-    echo -e "   ${BLUE}•${NC} ./status.sh - Check service status"
-    echo -e "   ${BLUE}•${NC} ./logs.sh   - View service logs"
+    echo -e "${CYAN}📚 New Aliases (after source ~/.bashrc):${NC}"
+    echo -e "   ${BLUE}•${NC} ${YELLOW}start-agent${NC}    - Start all services"
+    echo -e "   ${BLUE}•${NC} ${YELLOW}stop-agent${NC}     - Stop all services"
+    echo -e "   ${BLUE}•${NC} ${YELLOW}status-agent${NC}   - Check service status"
+    echo -e "   ${BLUE}•${NC} ${YELLOW}logs-agent${NC}     - View service logs"
+    echo -e "   ${BLUE}•${NC} ${YELLOW}restart-agent${NC}  - Restart all services"
+    echo ""
+    echo -e "${CYAN}💡 Shell Welcome Message:${NC}"
+    echo -e "   Every time you open a new shell, you'll see:"
+    echo -e "   ${YELLOW}'start agent = start-agent → Start Astron Agent'${NC}"
+    echo ""
+    echo -e "${CYAN}🔄 Auto-Start (Optional):${NC}"
+    echo -e "   To enable auto-start on WSL2 boot:"
+    echo -e "   ${BLUE}vim ~/.bashrc${NC}"
+    echo -e "   Uncomment the auto-start section at the end"
     echo ""
     echo -e "${CYAN}📖 Documentation:${NC}"
-    echo -e "   ${BLUE}•${NC} DEPLOYMENT_WSL2.md - Deployment guide"
-    echo -e "   ${BLUE}•${NC} docker/DEPLOYMENT_GUIDE_zh.md - Chinese deployment guide"
+    echo -e "   ${BLUE}•${NC} DEPLOYMENT_WSL2.md"
+    echo -e "   ${BLUE}•${NC} docker/DEPLOYMENT_GUIDE_zh.md"
     echo ""
-    echo -e "${YELLOW}⚠${NC}  ${CYAN}Important Notes:${NC}"
-    echo -e "   ${BLUE}•${NC} First startup may take 5-10 minutes"
-    echo -e "   ${BLUE}•${NC} Services will wait for dependencies to be healthy"
-    echo -e "   ${BLUE}•${NC} Check logs if services don't start: ${BLUE}./logs.sh${NC}"
+    echo -e "${YELLOW}⚠${NC}  ${CYAN}Important:${NC}"
+    echo -e "   Run ${BLUE}source ~/.bashrc${NC} to activate aliases now"
+    echo -e "   Or restart your shell"
     echo ""
 }
 
@@ -462,6 +562,7 @@ main() {
     create_directories
     pull_images
     create_helper_scripts
+    setup_bashrc_integration
     print_summary
 }
 
