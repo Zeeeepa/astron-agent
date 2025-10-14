@@ -137,13 +137,104 @@ start_services() {
     echo ""
     
     # Start all services
-    if ${COMPOSE_CMD} up -d; then
+    if ${COMPOSE_CMD} up -d 2>&1 | grep -v "variable is not set" | grep -v "attribute.*version.*is obsolete"; then
         print_success "Services started"
     else
         print_error "Failed to start services"
         print_info "Check logs with: ./logs.sh"
         exit 1
     fi
+    
+    echo ""
+    print_info "Monitoring service startup..."
+    echo ""
+    
+    # Show startup progress
+    show_startup_progress
+}
+
+#############################################################################
+# Show startup progress
+#############################################################################
+
+show_startup_progress() {
+    local ALL_SERVICES=(
+        "astron-agent-postgres:PostgreSQL"
+        "astron-agent-mysql:MySQL"
+        "astron-agent-redis:Redis"
+        "astron-agent-elasticsearch:Elasticsearch"
+        "astron-agent-kafka:Kafka"
+        "astron-agent-minio:MinIO"
+        "astron-agent-core-tenant:Tenant Service"
+        "astron-agent-core-database:Database Service"
+        "astron-agent-core-rpa:RPA Service"
+        "astron-agent-core-link:Link Service"
+        "astron-agent-core-aitools:AI Tools Service"
+        "astron-agent-core-agent:Agent Service"
+        "astron-agent-core-knowledge:Knowledge Service"
+        "astron-agent-core-workflow:Workflow Service"
+        "astron-agent-nginx:Nginx Gateway"
+        "astron-agent-console-frontend:Frontend"
+        "astron-agent-console-hub:Hub"
+    )
+    
+    local MAX_WAIT=60  # Wait up to 60 seconds for initial startup
+    local ELAPSED=0
+    
+    while [ $ELAPSED -lt $MAX_WAIT ]; do
+        local ALL_STARTED=true
+        
+        for service_info in "${ALL_SERVICES[@]}"; do
+            local CONTAINER_NAME="${service_info%%:*}"
+            local DISPLAY_NAME="${service_info##*:}"
+            
+            if docker ps --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"; then
+                local STATUS=$(docker inspect --format='{{.State.Status}}' "${CONTAINER_NAME}" 2>/dev/null)
+                local HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "${CONTAINER_NAME}" 2>/dev/null || echo "no-check")
+                
+                if [ "${STATUS}" == "running" ]; then
+                    if [ "${HEALTH}" == "healthy" ]; then
+                        echo -e "  ${GREEN}✓${NC} ${DISPLAY_NAME} - ${GREEN}Healthy${NC}"
+                    elif [ "${HEALTH}" == "starting" ]; then
+                        echo -e "  ${YELLOW}◐${NC} ${DISPLAY_NAME} - ${YELLOW}Starting...${NC}"
+                        ALL_STARTED=false
+                    elif [ "${HEALTH}" == "no-check" ]; then
+                        echo -e "  ${GREEN}✓${NC} ${DISPLAY_NAME} - ${GREEN}Running${NC}"
+                    else
+                        echo -e "  ${CYAN}○${NC} ${DISPLAY_NAME} - ${GRAY}${STATUS}${NC}"
+                        ALL_STARTED=false
+                    fi
+                else
+                    echo -e "  ${GRAY}○${NC} ${DISPLAY_NAME} - ${GRAY}${STATUS}${NC}"
+                    ALL_STARTED=false
+                fi
+            else
+                echo -e "  ${GRAY}○${NC} ${DISPLAY_NAME} - ${GRAY}Starting...${NC}"
+                ALL_STARTED=false
+            fi
+        done
+        
+        if [ "${ALL_STARTED}" = true ]; then
+            echo ""
+            print_success "All services are starting up!"
+            return 0
+        fi
+        
+        sleep 3
+        ELAPSED=$((ELAPSED + 3))
+        
+        if [ $ELAPSED -lt $MAX_WAIT ]; then
+            # Clear previous output and redraw (simple refresh)
+            echo ""
+            echo -ne "${GRAY}Refreshing status...${NC}\r"
+            sleep 1
+            echo ""
+        fi
+    done
+    
+    echo ""
+    print_warning "Some services are still starting up"
+    print_info "This is normal - health checks continue in background"
 }
 
 #############################################################################
@@ -432,4 +523,3 @@ main() {
 main
 
 exit 0
-

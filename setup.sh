@@ -246,20 +246,37 @@ setup_environment() {
             cp .env "${BACKUP_NAME}"
             print_success "Backed up existing .env to ${BACKUP_NAME}"
             cp .env.example .env
-            print_success "Created new .env from .env.example"
+            
+            # Disable Casdoor by default (set to empty strings)
+            print_info "Disabling Casdoor authentication (not needed for local development)"
+            sed -i 's|^CONSOLE_CASDOOR_URL=.*|CONSOLE_CASDOOR_URL=|' .env
+            sed -i 's|^CONSOLE_CASDOOR_ID=.*|CONSOLE_CASDOOR_ID=|' .env
+            sed -i 's|^CONSOLE_CASDOOR_APP=.*|CONSOLE_CASDOOR_APP=|' .env
+            sed -i 's|^CONSOLE_CASDOOR_ORG=.*|CONSOLE_CASDOOR_ORG=|' .env
+            
+            print_success "Created new .env with Casdoor disabled"
         else
             print_info "Keeping existing .env file"
         fi
     else
         cp .env.example .env
-        print_success "Created .env from .env.example"
+        
+        # Disable Casdoor by default (set to empty strings)
+        print_info "Disabling Casdoor authentication (not needed for local development)"
+        sed -i 's|^CONSOLE_CASDOOR_URL=.*|CONSOLE_CASDOOR_URL=|' .env
+        sed -i 's|^CONSOLE_CASDOOR_ID=.*|CONSOLE_CASDOOR_ID=|' .env
+        sed -i 's|^CONSOLE_CASDOOR_APP=.*|CONSOLE_CASDOOR_APP=|' .env
+        sed -i 's|^CONSOLE_CASDOOR_ORG=.*|CONSOLE_CASDOOR_ORG=|' .env
+        
+        print_success "Created .env from .env.example with Casdoor disabled"
     fi
     
-    print_info "Please review and customize the .env file with your settings:"
-    print_info "  - Database passwords"
-    print_info "  - MinIO credentials"
-    print_info "  - Casdoor configuration (if using)"
-    print_info "  - API keys and secrets"
+    echo ""
+    print_success "Casdoor authentication disabled for local development"
+    print_info "Console will be accessible without authentication"
+    echo ""
+    print_info "If you want to enable Casdoor later, edit ${DOCKER_DIR}/.env"
+    print_info "and configure CONSOLE_CASDOOR_* variables"
     echo ""
 }
 
@@ -570,4 +587,3 @@ main() {
 main
 
 exit 0
-
