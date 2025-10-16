@@ -49,7 +49,7 @@ i18n
         translation: zh,
       },
     },
-    fallbackLng: 'zh',
+    fallbackLng: 'en',
     interpolation: {
       escapeValue: false, // React already safes from XSS
     },
@@ -58,7 +58,7 @@ i18n
       lookupLocalStorage: 'locale-storage',
       caches: ['localStorage'],
     },
-    lng: getSavedLanguage() || 'zh', // Use saved language if available
+    lng: getSavedLanguage() || 'en', // Use saved language if available
     // 确保使用简单的语言代码
     load: 'languageOnly',
     lowerCaseLng: true,
