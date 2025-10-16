@@ -10,6 +10,7 @@ from api.schemas.completion_chunk import ReasonChatCompletionChunk
 from api.v1.bot_config_mgr_api import bot_config_mgr_router
 from api.v1.openapi import openapi_router
 from api.v1.workflow_agent import workflow_agent_router
+from api.v1.rpa_integration import rpa_integration_router
 
 # Use unified common package import module
 from common_imports import initialize_services, logger, sid_generator2
@@ -56,6 +57,7 @@ async def validation_exception_handler(
 app.include_router(openapi_router)
 app.include_router(workflow_agent_router)
 app.include_router(bot_config_mgr_router)
+app.include_router(rpa_integration_router)
 
 if __name__ == "__main__":
 

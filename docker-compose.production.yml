@@ -1,0 +1,271 @@
+version: '3.8'
+
+services:
+  # Astron-Agent Main Service
+  astron-agent:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent
+    ports:
+      - "${AGENT_PORT:-8000}:8000"
+    environment:
+      - RPA_OPENAPI_URL=http://astron-rpa-openapi:8020
+      - RPA_MCP_ENDPOINT=http://astron-rpa-openapi:8020/mcp
+      - MYSQL_URL=mysql://root:${MYSQL_ROOT_PASSWORD:-root123}@mysql:3306/astron_unified
+      - REDIS_URL=redis://redis-cluster:6379
+      - RPA_INTEGRATION_ENABLED=true
+      - RPA_DEBUG_MODE=${RPA_DEBUG_MODE:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PYTHONPATH=/app
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis-cluster:
+        condition: service_healthy
+      astron-rpa-openapi:
+        condition: service_healthy
+    networks:
+      - astron-network
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Astron-RPA OpenAPI Service
+  astron-rpa-openapi:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.rpa-openapi
+    ports:
+      - "${RPA_OPENAPI_PORT:-8020}:8020"
+    environment:
+      - AGENT_CALLBACK_URL=http://astron-agent:8000/webhook
+      - RPA_ENGINE_URL=http://astron-rpa-engine:8021
+      - MYSQL_URL=mysql://root:${MYSQL_ROOT_PASSWORD:-root123}@mysql:3306/rpa
+      - REDIS_URL=redis://redis-cluster:6379
+      - PYTHON_VERSION=3.13+
+      - MCP_ENABLED=true
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis-cluster:
+        condition: service_healthy
+      astron-rpa-engine:
+        condition: service_healthy
+    networks:
+      - astron-network
+    volumes:
+      - ./rpa-logs:/app/logs
+      - ./rpa-config:/app/config
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8020/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Astron-RPA Engine Service
+  astron-rpa-engine:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.rpa-engine
+    ports:
+      - "${RPA_ENGINE_PORT:-8021}:8021"
+    environment:
+      - PYTHON_VERSION=3.13+
+      - COMPONENT_PATH=/app/components
+      - MYSQL_URL=mysql://root:${MYSQL_ROOT_PASSWORD:-root123}@mysql:3306/rpa
+      - REDIS_URL=redis://redis-cluster:6379
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis-cluster:
+        condition: service_healthy
+    networks:
+      - astron-network
+    volumes:
+      - ./rpa-components:/app/components
+      - ./rpa-workflows:/app/workflows
+      - ./rpa-logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8021/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # MySQL Database
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: astron_unified
+      MYSQL_USER: ${MYSQL_USER:-astron}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-astron123}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d
+      - ./docker/mysql/conf.d:/etc/mysql/conf.d
+    networks:
+      - astron-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root123}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    command: --default-authentication-plugin=mysql_native_password
+
+  # Redis Cluster
+  redis-cluster:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - astron-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Nginx Load Balancer & Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+      - ./docker/nginx/ssl:/etc/nginx/ssl
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - astron-agent
+      - astron-rpa-openapi
+    networks:
+      - astron-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./docker/prometheus/rules:/etc/prometheus/rules
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--storage.tsdb.retention.time=30d'
+    networks:
+      - astron-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./docker/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - astron-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Jaeger Tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "${JAEGER_UI_PORT:-16686}:16686"
+      - "${JAEGER_COLLECTOR_PORT:-14268}:14268"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    volumes:
+      - jaeger_data:/tmp
+    networks:
+      - astron-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Web UI (Optional)
+  astron-web-ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web-ui
+    ports:
+      - "${WEB_UI_PORT:-3001}:3000"
+    environment:
+      - REACT_APP_AGENT_API_URL=http://localhost:${AGENT_PORT:-8000}
+      - REACT_APP_RPA_API_URL=http://localhost:${RPA_OPENAPI_PORT:-8020}
+      - REACT_APP_GRAFANA_URL=http://localhost:${GRAFANA_PORT:-3000}
+    depends_on:
+      - astron-agent
+      - astron-rpa-openapi
+    networks:
+      - astron-network
+    restart: unless-stopped
+    profiles:
+      - ui
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  jaeger_data:
+    driver: local
+
+networks:
+  astron-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
