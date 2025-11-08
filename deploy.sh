@@ -13,7 +13,9 @@
 # Usage: ./deploy.sh
 ################################################################################
 
-set -e  # Exit on error (will be handled by our error handler)
+set -eE  # Exit on error and inherit ERR trap in functions
+set -o pipefail  # Catch errors in pipelines
+set -u  # Error on undefined variables
 
 # Color codes for output
 RED='\033[0;31m'
@@ -25,16 +27,23 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 BOLD='\033[1m'
 
-# Configuration
-REPO_URL="https://github.com/iflytek/astron-agent.git"
-REPO_DIR="astron-agent"
-DEPLOY_DIR="docker/astronAgent"
+# Configuration with validation
+REPO_URL="${REPO_URL:-https://github.com/iflytek/astron-agent.git}"
+REPO_DIR="${REPO_DIR:-astron-agent}"
+DEPLOY_DIR="${DEPLOY_DIR:-docker/astronAgent}"
 LOG_FILE="deployment_$(date +%Y%m%d_%H%M%S).log"
+LOCKFILE="/tmp/astron-agent-deploy.lock"
+MAX_RETRIES=3
+RETRY_DELAY=5
 
 # AI Configuration for error resolution
 export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-https://api.z.ai/api/anthropic}"
 export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-glm-4.6}"
 export ANTHROPIC_AUTH_TOKEN="${ANTHROPIC_AUTH_TOKEN:-ae034cdcfefe4227879e6962493bc113.mRURYmJrKOFSEaY0}"
+
+# Error tracking
+declare -a ERRORS=()
+ERROR_COUNT=0
 
 ################################################################################
 # Utility Functions
@@ -96,6 +105,167 @@ spinner() {
         printf "\b\b\b\b\b\b"
     done
     printf "    \b\b\b\b"
+}
+
+################################################################################
+# Enhanced Error Handling
+################################################################################
+
+# Lock file management
+acquire_lock() {
+    local timeout=30
+    local elapsed=0
+    
+    while [ -f "$LOCKFILE" ] && [ $elapsed -lt $timeout ]; do
+        log_warning "Another deployment is in progress. Waiting..."
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+    
+    if [ $elapsed -ge $timeout ]; then
+        log_error "Could not acquire lock. Another deployment may be stuck."
+        log_info "Remove lock file manually if needed: sudo rm $LOCKFILE"
+        return 1
+    fi
+    
+    echo $$ > "$LOCKFILE"
+    log_info "Lock acquired (PID: $$)"
+}
+
+release_lock() {
+    if [ -f "$LOCKFILE" ]; then
+        rm -f "$LOCKFILE"
+        log_info "Lock released"
+    fi
+}
+
+# Cleanup function
+cleanup_on_exit() {
+    local exit_code=$?
+    release_lock
+    
+    if [ $exit_code -ne 0 ]; then
+        log_error "Deployment failed with exit code: $exit_code"
+        log_info "Check log file for details: $LOG_FILE"
+        
+        if [ ${#ERRORS[@]} -gt 0 ]; then
+            echo -e "\n${RED}${BOLD}Errors encountered:${NC}"
+            for error in "${ERRORS[@]}"; do
+                echo -e "${RED}  - $error${NC}"
+            done
+        fi
+    fi
+}
+
+trap cleanup_on_exit EXIT
+trap 'release_lock; exit 130' INT TERM
+
+# Record error
+record_error() {
+    local error_msg="$1"
+    ERRORS+=("$error_msg")
+    ERROR_COUNT=$((ERROR_COUNT + 1))
+    log_error "$error_msg"
+}
+
+# Retry mechanism
+retry_command() {
+    local max_attempts="${1:-$MAX_RETRIES}"
+    local delay="${2:-$RETRY_DELAY}"
+    shift 2
+    local cmd="$@"
+    local attempt=1
+    
+    while [ $attempt -le $max_attempts ]; do
+        log_info "Attempt $attempt/$max_attempts: $cmd"
+        
+        if eval "$cmd"; then
+            return 0
+        fi
+        
+        if [ $attempt -lt $max_attempts ]; then
+            log_warning "Command failed. Retrying in ${delay}s..."
+            sleep $delay
+        fi
+        
+        attempt=$((attempt + 1))
+    done
+    
+    record_error "Command failed after $max_attempts attempts: $cmd"
+    return 1
+}
+
+# Check command availability
+check_command() {
+    local cmd="$1"
+    local package="${2:-$1}"
+    
+    if ! command -v "$cmd" &> /dev/null; then
+        log_warning "$cmd not found. Attempting to install $package..."
+        
+        if sudo apt-get install -y -qq "$package" >> "$LOG_FILE" 2>&1; then
+            log_success "$package installed"
+            return 0
+        else
+            record_error "Failed to install $package"
+            return 1
+        fi
+    fi
+    
+    log_info "$cmd is available ✓"
+    return 0
+}
+
+# Validate network connectivity
+check_network() {
+    local test_urls=(
+        "https://github.com"
+        "https://download.docker.com"
+        "https://archive.ubuntu.com"
+    )
+    
+    log_info "Checking network connectivity..."
+    
+    for url in "${test_urls[@]}"; do
+        if curl -s --max-time 10 --head "$url" > /dev/null 2>&1; then
+            log_success "Network connectivity OK"
+            return 0
+        fi
+    done
+    
+    record_error "No network connectivity detected"
+    return 1
+}
+
+# Validate environment
+validate_environment() {
+    log_info "Validating environment..."
+    
+    # Check if running in a container
+    if [ -f /.dockerenv ]; then
+        log_warning "Running inside a container. Some operations may not work correctly."
+    fi
+    
+    # Check for required commands
+    local required_commands=("curl" "wget" "tar" "gzip")
+    for cmd in "${required_commands[@]}"; do
+        check_command "$cmd" || return 1
+    done
+    
+    # Check network
+    check_network || return 1
+    
+    # Check disk space (in KB)
+    local available_space=$(df -k / | awk 'NR==2 {print $4}')
+    local required_space=$((50 * 1024 * 1024))  # 50GB in KB
+    
+    if [ "$available_space" -lt "$required_space" ]; then
+        log_warning "Low disk space: $((available_space / 1024 / 1024))GB available"
+        log_warning "Recommended: 50GB+ free space"
+    fi
+    
+    log_success "Environment validation passed"
+    return 0
 }
 
 ################################################################################
@@ -276,35 +446,102 @@ install_dependencies() {
 
 install_docker() {
     if command -v docker &> /dev/null; then
-        log_info "Docker already installed: $(docker --version)"
+        local docker_version=$(docker --version 2>/dev/null || echo "unknown")
+        log_info "Docker already installed: $docker_version"
+        
+        # Verify Docker daemon is accessible
+        if ! docker ps &> /dev/null; then
+            log_warning "Docker daemon not accessible. Attempting to fix..."
+            sudo systemctl start docker || record_error "Failed to start Docker daemon"
+            sleep 3
+        fi
+        
         return 0
     fi
     
     log_info "Installing Docker..."
     
-    # Add Docker's official GPG key
+    # Backup any existing Docker configuration
+    if [ -d "/etc/docker" ]; then
+        log_info "Backing up existing Docker configuration..."
+        sudo cp -r /etc/docker "/etc/docker.backup.$(date +%s)" 2>/dev/null || true
+    fi
+    
+    # Remove old Docker installations
+    log_info "Removing old Docker installations if any..."
+    sudo apt-get remove -y -qq docker docker-engine docker.io containerd runc 2>/dev/null || true
+    
+    # Add Docker's official GPG key with retry
+    log_info "Adding Docker GPG key..."
     sudo mkdir -p /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>> "$LOG_FILE"
+    
+    if ! retry_command 3 5 "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>> '$LOG_FILE'"; then
+        record_error "Failed to add Docker GPG key"
+        return 1
+    fi
+    
+    # Set correct permissions on GPG key
+    sudo chmod a+r /etc/apt/keyrings/docker.gpg
     
     # Set up repository
-    echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-      $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    log_info "Adding Docker repository..."
+    local arch=$(dpkg --print-architecture)
+    local codename=$(lsb_release -cs)
     
-    # Install Docker Engine
-    sudo apt-get update -qq >> "$LOG_FILE" 2>&1
-    sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >> "$LOG_FILE" 2>&1 &
-    spinner $!
+    echo \
+      "deb [arch=$arch signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+      $codename stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    
+    # Update package index
+    log_info "Updating package index..."
+    if ! retry_command 3 5 "sudo apt-get update -qq >> '$LOG_FILE' 2>&1"; then
+        record_error "Failed to update package index"
+        return 1
+    fi
+    
+    # Install Docker Engine with retry
+    log_info "Installing Docker Engine (this may take a few minutes)..."
+    if ! retry_command 3 10 "sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >> '$LOG_FILE' 2>&1"; then
+        record_error "Failed to install Docker Engine"
+        call_ai_resolver "Docker installation failed" "$(tail -n 50 '$LOG_FILE')"
+        return 1
+    fi
     
     # Add current user to docker group
-    sudo usermod -aG docker $USER
+    log_info "Configuring Docker permissions..."
+    if ! sudo usermod -aG docker $USER; then
+        log_warning "Failed to add user to docker group. You may need to do this manually."
+    fi
     
-    # Start Docker service
-    sudo systemctl start docker
-    sudo systemctl enable docker
+    # Start and enable Docker service
+    log_info "Starting Docker service..."
+    if ! sudo systemctl start docker; then
+        record_error "Failed to start Docker service"
+        return 1
+    fi
     
-    log_success "Docker installed: $(docker --version)"
-    log_warning "You may need to log out and back in for docker group permissions to take effect"
+    if ! sudo systemctl enable docker; then
+        log_warning "Failed to enable Docker service at boot"
+    fi
+    
+    # Wait for Docker daemon to be ready
+    local max_wait=30
+    local waited=0
+    while ! docker ps &> /dev/null && [ $waited -lt $max_wait ]; do
+        log_info "Waiting for Docker daemon..."
+        sleep 2
+        waited=$((waited + 2))
+    done
+    
+    if docker ps &> /dev/null; then
+        local docker_version=$(docker --version)
+        log_success "Docker installed: $docker_version"
+        log_warning "IMPORTANT: You may need to log out and back in for docker group permissions to take effect"
+        log_info "If commands fail with permission errors, run: newgrp docker"
+    else
+        record_error "Docker daemon did not start properly"
+        return 1
+    fi
 }
 
 verify_docker() {
@@ -529,6 +766,96 @@ validate_deployment() {
 }
 
 ################################################################################
+# Final Health Check
+################################################################################
+
+perform_final_health_check() {
+    log_info "Performing comprehensive health check..."
+    
+    cd "$REPO_DIR/$DEPLOY_DIR" || return 1
+    
+    local compose_file="docker-compose-with-auth.yaml"
+    local all_healthy=true
+    
+    # Check each service
+    local services=$(docker compose -f "$compose_file" ps --services 2>/dev/null)
+    
+    if [ -z "$services" ]; then
+        log_error "No services found"
+        cd - > /dev/null
+        return 1
+    fi
+    
+    echo -e "\n${CYAN}${BOLD}Service Health Status:${NC}"
+    
+    for service in $services; do
+        local container_id=$(docker compose -f "$compose_file" ps -q "$service" 2>/dev/null)
+        
+        if [ -z "$container_id" ]; then
+            echo -e "${RED}  ✗ $service - Not found${NC}"
+            all_healthy=false
+            continue
+        fi
+        
+        local status=$(docker inspect --format='{{.State.Status}}' "$container_id" 2>/dev/null)
+        local health=$(docker inspect --format='{{.State.Health.Status}}' "$container_id" 2>/dev/null)
+        
+        if [ "$status" = "running" ]; then
+            if [ "$health" = "<no value>" ] || [ "$health" = "healthy" ]; then
+                echo -e "${GREEN}  ✓ $service - Running${NC}"
+            elif [ "$health" = "starting" ]; then
+                echo -e "${YELLOW}  ◐ $service - Starting${NC}"
+                all_healthy=false
+            else
+                echo -e "${YELLOW}  ⚠ $service - Unhealthy${NC}"
+                all_healthy=false
+            fi
+        else
+            echo -e "${RED}  ✗ $service - $status${NC}"
+            all_healthy=false
+        fi
+    done
+    
+    echo ""
+    
+    # Test URLs
+    log_info "Testing service endpoints..."
+    local frontend_accessible=false
+    local casdoor_accessible=false
+    
+    if curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://localhost/" | grep -q "200\|302\|401"; then
+        echo -e "${GREEN}  ✓ Frontend accessible at http://localhost/${NC}"
+        frontend_accessible=true
+    else
+        echo -e "${YELLOW}  ⚠ Frontend may not be ready yet${NC}"
+    fi
+    
+    if curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://localhost:8000" | grep -q "200\|302\|401"; then
+        echo -e "${GREEN}  ✓ Casdoor accessible at http://localhost:8000${NC}"
+        casdoor_accessible=true
+    else
+        echo -e "${YELLOW}  ⚠ Casdoor may not be ready yet${NC}"
+    fi
+    
+    echo ""
+    
+    cd - > /dev/null
+    
+    if $all_healthy && $frontend_accessible && $casdoor_accessible; then
+        log_success "All health checks passed!"
+        return 0
+    elif $frontend_accessible || $casdoor_accessible; then
+        log_warning "Some services are accessible but not all health checks passed"
+        log_info "Services may still be initializing. Check again in a few minutes."
+        return 0
+    else
+        log_warning "Health checks completed with issues"
+        log_info "Run ./start.sh for detailed status and troubleshooting"
+        return 1
+    fi
+}
+
+################################################################################
 # Main Execution
 ################################################################################
 
@@ -537,49 +864,97 @@ main() {
     
     log_info "Starting Astron Agent deployment on Ubuntu"
     log_info "Log file: $LOG_FILE"
+    log_info "Process ID: $$"
+    print_separator
+    
+    # Acquire deployment lock
+    if ! acquire_lock; then
+        log_error "Failed to acquire deployment lock"
+        exit 1
+    fi
+    
+    # Validate environment first
+    log_info "Step 0/9: Validating environment..."
+    if ! validate_environment; then
+        log_error "Environment validation failed"
+        exit 1
+    fi
     print_separator
     
     # System checks
-    log_info "Step 1/8: Performing system checks..."
+    log_info "Step 1/9: Performing system checks..."
     check_root
     check_ubuntu
     check_system_resources
     print_separator
     
     # Install dependencies
-    log_info "Step 2/8: Installing dependencies..."
-    install_dependencies
+    log_info "Step 2/9: Installing dependencies..."
+    if ! install_dependencies; then
+        log_error "Failed to install dependencies"
+        exit 1
+    fi
     print_separator
     
     # Install Docker
-    log_info "Step 3/8: Installing Docker..."
-    install_docker
-    verify_docker
+    log_info "Step 3/9: Installing Docker..."
+    if ! install_docker; then
+        log_error "Failed to install Docker"
+        call_ai_resolver "Docker installation failed" "$(tail -n 100 '$LOG_FILE')"
+        exit 1
+    fi
+    
+    if ! verify_docker; then
+        log_error "Docker verification failed"
+        exit 1
+    fi
     print_separator
     
     # Repository management
-    log_info "Step 4/8: Managing repository..."
-    clone_or_update_repo
+    log_info "Step 4/9: Managing repository..."
+    if ! clone_or_update_repo; then
+        log_error "Failed to manage repository"
+        exit 1
+    fi
     print_separator
     
     # Configuration
-    log_info "Step 5/8: Configuring environment..."
-    configure_environment
+    log_info "Step 5/9: Configuring environment..."
+    if ! configure_environment; then
+        log_error "Failed to configure environment"
+        exit 1
+    fi
     print_separator
     
     # Deploy services
-    log_info "Step 6/8: Deploying services..."
-    deploy_services
+    log_info "Step 6/9: Deploying services..."
+    if ! deploy_services; then
+        log_error "Failed to deploy services"
+        call_ai_resolver "Service deployment failed" "$(tail -n 100 '$LOG_FILE')"
+        exit 1
+    fi
     print_separator
     
     # Wait for services
-    log_info "Step 7/8: Waiting for services..."
-    wait_for_services
+    log_info "Step 7/9: Waiting for services..."
+    if ! wait_for_services; then
+        log_warning "Some services may not be fully healthy"
+        log_info "Check logs with: docker compose -f $REPO_DIR/$DEPLOY_DIR/docker-compose-with-auth.yaml logs"
+    fi
     print_separator
     
     # Validate
-    log_info "Step 8/8: Validating deployment..."
-    validate_deployment
+    log_info "Step 8/9: Validating deployment..."
+    if ! validate_deployment; then
+        log_warning "Deployment validation completed with warnings"
+    fi
+    print_separator
+    
+    # Final health check
+    log_info "Step 9/9: Final health check..."
+    if ! perform_final_health_check; then
+        log_warning "Some services may need attention"
+    fi
     print_separator
     
     # Success message
@@ -589,14 +964,34 @@ main() {
     echo -e "${GREEN}${BOLD}║                                                               ║${NC}"
     echo -e "${GREEN}${BOLD}╚═══════════════════════════════════════════════════════════════╝${NC}\n"
     
+    # Show statistics
+    echo -e "${CYAN}${BOLD}Deployment Statistics:${NC}"
+    echo -e "  Errors encountered: ${ERROR_COUNT}"
+    echo -e "  Log file: ${YELLOW}$LOG_FILE${NC}"
+    echo -e "  Process ID: $$"
+    echo -e "  Duration: ~10-20 minutes (first time)"
+    echo ""
+    
     echo -e "${CYAN}${BOLD}Next Steps:${NC}"
     echo -e "1. Run ${GREEN}./start.sh${NC} to start the platform with health checks"
     echo -e "2. Run ${RED}./stop.sh${NC} to stop all services"
     echo -e "3. Access the application at ${BLUE}http://localhost/${NC}"
     echo -e "4. Default Casdoor login: ${YELLOW}admin / 123${NC}"
-    echo -e "\n${CYAN}Log file: ${YELLOW}$LOG_FILE${NC}\n"
+    echo -e "5. ${BOLD}IMPORTANT:${NC} Change the default password immediately!"
+    echo ""
+    
+    echo -e "${CYAN}${BOLD}Troubleshooting:${NC}"
+    echo -e "  View logs: ${YELLOW}cat $LOG_FILE${NC}"
+    echo -e "  Service status: ${YELLOW}docker compose -f $REPO_DIR/$DEPLOY_DIR/docker-compose-with-auth.yaml ps${NC}"
+    echo -e "  Service logs: ${YELLOW}docker compose -f $REPO_DIR/$DEPLOY_DIR/docker-compose-with-auth.yaml logs -f${NC}"
+    echo ""
+    
+    if [ $ERROR_COUNT -gt 0 ]; then
+        echo -e "${YELLOW}${BOLD}⚠️  Note: $ERROR_COUNT non-critical errors occurred during deployment${NC}"
+        echo -e "${YELLOW}Check the log file for details: $LOG_FILE${NC}"
+        echo ""
+    fi
 }
 
 # Run main function
 main "$@"
-
