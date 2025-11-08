@@ -23,6 +23,18 @@
 
 # Rollback to specific backup
 ./rollback.sh backup_20250108_171930
+
+# Check system status
+./status.sh
+
+# View service logs
+./logs.sh nginx
+
+# Follow logs in real-time
+./logs.sh nginx -f
+
+# Analyze errors
+./logs.sh --errors
 ```
 
 ---
@@ -45,13 +57,59 @@ astron-agent/
 ├── deploy.sh                           # Complete deployment (with backup)
 ├── start.sh                            # Start with health checks
 ├── stop.sh                             # Graceful shutdown
-├── rollback.sh                         # Rollback to previous state ⭐ NEW
-├── backups/                            # Automatic backups directory ⭐ NEW
+├── rollback.sh                         # Rollback to previous state
+├── status.sh                           # System status checker ⭐ NEW
+├── logs.sh                             # Intelligent log analyzer ⭐ NEW
+├── backups/                            # Automatic backups directory
 ├── UBUNTU_DEPLOYMENT_GUIDE.md          # Full documentation
 ├── QUICK_REFERENCE.md                  # This file
 └── docker/astronAgent/
     ├── .env                            # Configuration file
     └── docker-compose-with-auth.yaml   # Service definitions
+```
+
+---
+
+## 🔍 Operational Tools (NEW!)
+
+### Status Checking
+```bash
+./status.sh                    # Complete system overview
+./status.sh --services         # Service health only
+./status.sh --health           # Endpoint checks only
+./status.sh --resources        # CPU/memory/disk usage
+./status.sh --diagnostics      # Quick health check
+```
+
+### Log Analysis
+```bash
+./logs.sh                      # List available services
+./logs.sh nginx                # View nginx logs (last 50)
+./logs.sh nginx -f             # Follow nginx logs live
+./logs.sh nginx -n 200         # Last 200 lines
+./logs.sh --all                # All service logs
+./logs.sh --errors             # Error summary (all)
+./logs.sh --errors nginx       # Error summary (nginx)
+./logs.sh --deployment         # View deployment logs
+./logs.sh --export             # Export logs to file
+```
+
+### Troubleshooting Workflow
+```bash
+# 1. Check overall status
+./status.sh
+
+# 2. Identify problematic service
+./status.sh --services
+
+# 3. Analyze its errors
+./logs.sh --errors <service>
+
+# 4. View detailed logs
+./logs.sh <service> -n 100
+
+# 5. Export for support if needed
+./logs.sh --export <service>
 ```
 
 ---
