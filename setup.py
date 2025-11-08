@@ -66,6 +66,16 @@ class Configuration:
     jwt_secret: str = ""
     session_secret: str = ""
     
+    # Optional: AI Integration
+    anthropic_token: str = ""
+    anthropic_url: str = ""
+    openai_key: str = ""
+    
+    # Optional: OAuth2
+    oauth_client_id: str = ""
+    oauth_client_secret: str = ""
+    oauth_redirect_uri: str = ""
+    
     # Paths
     backup_dir: Path = Path("./backups")
     log_dir: Path = Path("./logs")
@@ -220,6 +230,170 @@ class ConfigGenerator:
     def __init__(self, config: Configuration):
         self.config = config
     
+    def prompt_user_input(self, interactive: bool = True):
+        """Prompt user for configuration values"""
+        if not interactive:
+            self.generate_secrets()
+            return
+        
+        Logger.info("=" * 60)
+        Logger.info("Interactive Configuration Setup")
+        Logger.info("=" * 60)
+        print()
+        
+        # Application Settings
+        Logger.info("📦 Application Settings")
+        print("-" * 60)
+        
+        app_name = input(f"Application name [{self.config.app_name}]: ").strip()
+        if app_name:
+            self.config.app_name = app_name
+        
+        app_env = input(f"Environment (production/development/staging) [{self.config.app_env}]: ").strip()
+        if app_env:
+            self.config.app_env = app_env
+        
+        debug = input(f"Enable debug mode? (yes/no) [no]: ").strip().lower()
+        self.config.debug = debug in ['yes', 'y', 'true']
+        print()
+        
+        # Port Configuration
+        Logger.info("🔌 Port Configuration")
+        print("-" * 60)
+        
+        nginx_port = input(f"Nginx port [{self.config.nginx_port}]: ").strip()
+        if nginx_port:
+            self.config.nginx_port = int(nginx_port)
+        
+        api_port = input(f"API port [{self.config.api_port}]: ").strip()
+        if api_port:
+            self.config.api_port = int(api_port)
+        
+        web_port = input(f"Web UI port [{self.config.web_port}]: ").strip()
+        if web_port:
+            self.config.web_port = int(web_port)
+        print()
+        
+        # Database Configuration
+        Logger.info("🗄️  Database Configuration")
+        print("-" * 60)
+        
+        mysql_database = input(f"Database name [{self.config.mysql_database}]: ").strip()
+        if mysql_database:
+            self.config.mysql_database = mysql_database
+        
+        mysql_user = input(f"Database user [{self.config.mysql_user}]: ").strip()
+        if mysql_user:
+            self.config.mysql_user = mysql_user
+        
+        # Password prompts
+        print()
+        Logger.info("🔐 Password Configuration")
+        print("-" * 60)
+        Logger.warning("Leave passwords blank to auto-generate secure random passwords")
+        print()
+        
+        mysql_root_password = input("MySQL root password [auto-generate]: ").strip()
+        if mysql_root_password:
+            self.config.mysql_root_password = mysql_root_password
+        else:
+            self.config.mysql_root_password = secrets.token_urlsafe(24)
+            Logger.success(f"Auto-generated MySQL root password")
+        
+        mysql_password = input("MySQL user password [auto-generate]: ").strip()
+        if mysql_password:
+            self.config.mysql_password = mysql_password
+        else:
+            self.config.mysql_password = secrets.token_urlsafe(24)
+            Logger.success(f"Auto-generated MySQL user password")
+        
+        redis_password = input("Redis password [auto-generate]: ").strip()
+        if redis_password:
+            self.config.redis_password = redis_password
+        else:
+            self.config.redis_password = secrets.token_urlsafe(24)
+            Logger.success(f"Auto-generated Redis password")
+        print()
+        
+        # Security Keys
+        Logger.info("🔑 Security Keys")
+        print("-" * 60)
+        Logger.warning("Leave blank to auto-generate secure random keys (RECOMMENDED)")
+        print()
+        
+        secret_key = input("Application secret key [auto-generate]: ").strip()
+        if secret_key:
+            self.config.secret_key = secret_key
+        else:
+            self.config.secret_key = secrets.token_urlsafe(32)
+            Logger.success(f"Auto-generated application secret key")
+        
+        jwt_secret = input("JWT secret key [auto-generate]: ").strip()
+        if jwt_secret:
+            self.config.jwt_secret = jwt_secret
+        else:
+            self.config.jwt_secret = secrets.token_urlsafe(32)
+            Logger.success(f"Auto-generated JWT secret key")
+        
+        session_secret = input("Session secret key [auto-generate]: ").strip()
+        if session_secret:
+            self.config.session_secret = session_secret
+        else:
+            self.config.session_secret = secrets.token_urlsafe(32)
+            Logger.success(f"Auto-generated session secret key")
+        print()
+        
+        # Optional: AI Integration
+        Logger.info("🤖 AI Integration (OPTIONAL)")
+        print("-" * 60)
+        Logger.info("Configure AI providers for error resolution and automation")
+        print()
+        
+        configure_ai = input("Configure AI integration? (yes/no) [no]: ").strip().lower()
+        if configure_ai in ['yes', 'y']:
+            print()
+            anthropic_token = input("Anthropic API token (optional): ").strip()
+            if anthropic_token:
+                self.config.anthropic_token = anthropic_token
+            
+            anthropic_url = input("Anthropic base URL (optional) [https://api.z.ai/api/anthropic]: ").strip()
+            if anthropic_url:
+                self.config.anthropic_url = anthropic_url
+            elif hasattr(self.config, 'anthropic_token') and self.config.anthropic_token:
+                self.config.anthropic_url = "https://api.z.ai/api/anthropic"
+            
+            openai_key = input("OpenAI API key (optional): ").strip()
+            if openai_key:
+                self.config.openai_key = openai_key
+        print()
+        
+        # Optional: OAuth2
+        Logger.info("🔐 OAuth2 Configuration (OPTIONAL)")
+        print("-" * 60)
+        Logger.info("Configure OAuth2 for external authentication")
+        print()
+        
+        configure_oauth = input("Configure OAuth2? (yes/no) [no]: ").strip().lower()
+        if configure_oauth in ['yes', 'y']:
+            print()
+            oauth_client_id = input("OAuth2 Client ID (optional): ").strip()
+            if oauth_client_id:
+                self.config.oauth_client_id = oauth_client_id
+            
+            oauth_client_secret = input("OAuth2 Client Secret (optional): ").strip()
+            if oauth_client_secret:
+                self.config.oauth_client_secret = oauth_client_secret
+            
+            oauth_redirect = input("OAuth2 Redirect URI (optional) [http://localhost/auth/callback]: ").strip()
+            if oauth_redirect:
+                self.config.oauth_redirect_uri = oauth_redirect
+            elif hasattr(self.config, 'oauth_client_id'):
+                self.config.oauth_redirect_uri = "http://localhost/auth/callback"
+        print()
+        
+        Logger.success("Configuration input complete!")
+        print()
+    
     def generate_secrets(self):
         """Generate secure random secrets"""
         if not self.config.secret_key:
@@ -237,7 +411,7 @@ class ConfigGenerator:
     
     def generate_env_file(self) -> str:
         """Generate .env file content"""
-        return f"""# Astron Agent Configuration
+        env_content = f"""# Astron Agent Configuration
 # Generated by setup.py
 
 # Application Settings
@@ -269,7 +443,38 @@ REDIS_PASSWORD={self.config.redis_password}
 SECRET_KEY={self.config.secret_key}
 JWT_SECRET={self.config.jwt_secret}
 SESSION_SECRET={self.config.session_secret}
-
+"""
+        
+        # Add optional AI Integration
+        if self.config.anthropic_token or self.config.openai_key:
+            env_content += """
+# AI Integration (Optional)"""
+            if self.config.anthropic_token:
+                env_content += f"""
+ANTHROPIC_AUTH_TOKEN={self.config.anthropic_token}"""
+            if self.config.anthropic_url:
+                env_content += f"""
+ANTHROPIC_BASE_URL={self.config.anthropic_url}"""
+            if self.config.openai_key:
+                env_content += f"""
+OPENAI_API_KEY={self.config.openai_key}"""
+            env_content += "\n"
+        
+        # Add optional OAuth2
+        if self.config.oauth_client_id:
+            env_content += f"""
+# OAuth2 Configuration (Optional)
+OAUTH2_CLIENT_ID={self.config.oauth_client_id}"""
+            if self.config.oauth_client_secret:
+                env_content += f"""
+OAUTH2_CLIENT_SECRET={self.config.oauth_client_secret}"""
+            if self.config.oauth_redirect_uri:
+                env_content += f"""
+OAUTH2_REDIRECT_URI={self.config.oauth_redirect_uri}"""
+            env_content += "\n"
+        
+        # Add advanced configuration
+        env_content += f"""
 # Circuit Breaker Configuration
 CIRCUIT_THRESHOLD=5
 CIRCUIT_TIMEOUT=60
@@ -284,6 +489,8 @@ BACKUP_DIR={self.config.backup_dir}
 BACKUP_RETENTION_DAYS=30
 AUTO_BACKUP_ENABLED=true
 """
+        
+        return env_content
     
     def write_env_file(self, path: Path = Path(".env")):
         """Write .env file"""
@@ -502,10 +709,12 @@ def main():
         sys.exit(0 if success else 1)
     
     elif command == "configure":
-        Logger.info("Generating configuration...")
+        Logger.info("Starting interactive configuration...")
+        print()
         config_gen = ConfigGenerator(installer.config)
+        config_gen.prompt_user_input(interactive=True)
         config_gen.write_env_file()
-        Logger.success("Configuration generated!")
+        Logger.success("Configuration saved to .env file!")
         sys.exit(0)
     
     elif command == "verify":
