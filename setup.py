@@ -322,21 +322,21 @@ class ConfigGenerator:
         print()
         
         secret_key = input("Application secret key [auto-generate]: ").strip()
-        if secret_key:
+        if secret_key and len(secret_key) > 5:  # Reasonable minimum length check
             self.config.secret_key = secret_key
         else:
             self.config.secret_key = secrets.token_urlsafe(32)
             Logger.success(f"Auto-generated application secret key")
         
         jwt_secret = input("JWT secret key [auto-generate]: ").strip()
-        if jwt_secret:
+        if jwt_secret and len(jwt_secret) > 5:
             self.config.jwt_secret = jwt_secret
         else:
             self.config.jwt_secret = secrets.token_urlsafe(32)
             Logger.success(f"Auto-generated JWT secret key")
         
         session_secret = input("Session secret key [auto-generate]: ").strip()
-        if session_secret:
+        if session_secret and len(session_secret) > 5:
             self.config.session_secret = session_secret
         else:
             self.config.session_secret = secrets.token_urlsafe(32)
