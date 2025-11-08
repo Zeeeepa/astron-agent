@@ -14,6 +14,15 @@
 
 # Stop + clean all data
 ./stop.sh --clean
+
+# Rollback to previous state
+./rollback.sh --latest
+
+# List available backups
+./rollback.sh --list
+
+# Rollback to specific backup
+./rollback.sh backup_20250108_171930
 ```
 
 ---
@@ -33,9 +42,11 @@
 
 ```
 astron-agent/
-├── deploy.sh                           # Complete deployment
+├── deploy.sh                           # Complete deployment (with backup)
 ├── start.sh                            # Start with health checks
 ├── stop.sh                             # Graceful shutdown
+├── rollback.sh                         # Rollback to previous state ⭐ NEW
+├── backups/                            # Automatic backups directory ⭐ NEW
 ├── UBUNTU_DEPLOYMENT_GUIDE.md          # Full documentation
 ├── QUICK_REFERENCE.md                  # This file
 └── docker/astronAgent/
@@ -287,4 +298,3 @@ sudo ufw allow 8000/tcp
 **That's it!** 🚀
 
 Open http://localhost/ and start building AI agents!
-
