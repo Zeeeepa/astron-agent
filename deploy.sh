@@ -674,6 +674,198 @@ configure_environment() {
 }
 
 ################################################################################
+# Backup & Rollback
+################################################################################
+
+create_backup() {
+    log_info "Creating pre-deployment backup..."
+    
+    local backup_dir="./backups"
+    local backup_id="backup_$(date +%Y%m%d_%H%M%S)"
+    local backup_path="$backup_dir/$backup_id"
+    
+    # Create backup directory
+    mkdir -p "$backup_path"
+    
+    # Backup configuration
+    if [ -f "$REPO_DIR/$DEPLOY_DIR/.env" ]; then
+        log_info "Backing up configuration..."
+        cp "$REPO_DIR/$DEPLOY_DIR/.env" "$backup_path/env_backup"
+    fi
+    
+    # Backup Docker volumes (if services are running)
+    if docker compose -f "$REPO_DIR/$DEPLOY_DIR/docker-compose-with-auth.yaml" ps -q 2>/dev/null | grep -q .; then
+        log_info "Backing up Docker volumes (this may take a few minutes)..."
+        
+        # Create volumes backup
+        if sudo tar -czf "$backup_path/docker_volumes_backup.tar.gz" \
+            /var/lib/docker/volumes/ 2>> "$LOG_FILE"; then
+            log_success "Docker volumes backed up"
+        else
+            log_warning "Failed to backup Docker volumes (non-critical)"
+        fi
+    else
+        log_info "No running services, skipping volume backup"
+    fi
+    
+    # Create metadata
+    cat > "$backup_path/metadata.json" << EOF
+{
+  "backup_id": "$backup_id",
+  "timestamp": "$(date +'%Y-%m-%d %H:%M:%S')",
+  "commit_hash": "$(git -C $REPO_DIR rev-parse HEAD 2>/dev/null || echo 'unknown')",
+  "status": "success"
+}
+EOF
+    
+    log_success "Backup created: $backup_id"
+    
+    # Cleanup old backups (keep last 5)
+    log_info "Cleaning up old backups..."
+    local backup_count=$(ls -1 "$backup_dir" 2>/dev/null | wc -l)
+    local max_backups=5
+    
+    if [ "$backup_count" -gt "$max_backups" ]; then
+        local to_remove=$((backup_count - max_backups))
+        ls -1t "$backup_dir" | tail -n "$to_remove" | while read old_backup; do
+            log_info "Removing old backup: $old_backup"
+            rm -rf "$backup_dir/$old_backup"
+        done
+    fi
+    
+    return 0
+}
+
+################################################################################
+# Pre-Deployment Validation
+################################################################################
+
+validate_ports_available() {
+    log_info "Checking port availability..."
+    
+    local required_ports=(80 8000 3306 6379)
+    local port_conflicts=()
+    
+    for port in "${required_ports[@]}"; do
+        if sudo lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
+            port_conflicts+=($port)
+            log_warning "Port $port is already in use"
+        fi
+    done
+    
+    if [ ${#port_conflicts[@]} -gt 0 ]; then
+        log_warning "Ports in use: ${port_conflicts[*]}"
+        log_info "Services may fail to start if ports are occupied"
+        return 1
+    fi
+    
+    log_success "All required ports available"
+    return 0
+}
+
+validate_docker_compose_syntax() {
+    log_info "Validating Docker Compose file..."
+    
+    cd "$REPO_DIR/$DEPLOY_DIR" || return 1
+    
+    if docker compose -f docker-compose-with-auth.yaml config > /dev/null 2>&1; then
+        log_success "Docker Compose syntax valid"
+        cd - > /dev/null
+        return 0
+    else
+        log_error "Docker Compose syntax invalid"
+        cd - > /dev/null
+        return 1
+    fi
+}
+
+validate_disk_space() {
+    log_info "Validating disk space..."
+    
+    local available_gb=$(df -BG / | awk 'NR==2 {print $4}' | tr -d 'G')
+    local required_gb=10
+    
+    if [ "$available_gb" -lt "$required_gb" ]; then
+        log_warning "Low disk space: ${available_gb}GB available (recommended: ${required_gb}GB+)"
+        return 1
+    fi
+    
+    log_success "Sufficient disk space: ${available_gb}GB available"
+    return 0
+}
+
+validate_env_file() {
+    log_info "Validating environment configuration..."
+    
+    local env_file="$REPO_DIR/$DEPLOY_DIR/.env"
+    
+    if [ ! -f "$env_file" ]; then
+        log_warning ".env file not found (will be created)"
+        return 0
+    fi
+    
+    # Check for required variables
+    local required_vars=(
+        "PLATFORM_APP_ID"
+        "PLATFORM_API_KEY"
+        "PLATFORM_API_SECRET"
+        "SPARK_API_PASSWORD"
+    )
+    
+    local missing_vars=()
+    
+    for var in "${required_vars[@]}"; do
+        if ! grep -q "^${var}=" "$env_file" 2>/dev/null; then
+            missing_vars+=($var)
+        fi
+    done
+    
+    if [ ${#missing_vars[@]} -gt 0 ]; then
+        log_warning "Missing required variables: ${missing_vars[*]}"
+        log_info "You can configure these after deployment"
+    else
+        log_success "All required variables present"
+    fi
+    
+    return 0
+}
+
+pre_deployment_validation() {
+    log_info "Running pre-deployment validation..."
+    
+    local validation_failed=false
+    
+    # Port availability (warning only)
+    if ! validate_ports_available; then
+        log_warning "Port conflicts detected (non-critical)"
+    fi
+    
+    # Docker Compose syntax (critical)
+    if ! validate_docker_compose_syntax; then
+        log_error "Docker Compose validation failed"
+        validation_failed=true
+    fi
+    
+    # Disk space (warning only)
+    if ! validate_disk_space; then
+        log_warning "Low disk space detected (non-critical)"
+    fi
+    
+    # Environment file (warning only)
+    if ! validate_env_file; then
+        log_warning "Environment validation completed with warnings"
+    fi
+    
+    if $validation_failed; then
+        log_error "Pre-deployment validation failed"
+        return 1
+    fi
+    
+    log_success "Pre-deployment validation passed"
+    return 0
+}
+
+################################################################################
 # Deployment
 ################################################################################
 
@@ -926,11 +1118,41 @@ main() {
     fi
     print_separator
     
+    # Pre-deployment validation
+    log_info "Step 5.5/9: Pre-deployment validation..."
+    if ! pre_deployment_validation; then
+        log_error "Pre-deployment validation failed"
+        exit 1
+    fi
+    print_separator
+    
+    # Create backup
+    log_info "Step 5.8/9: Creating backup..."
+    if ! create_backup; then
+        log_warning "Backup creation failed (non-critical)"
+    fi
+    print_separator
+    
     # Deploy services
     log_info "Step 6/9: Deploying services..."
     if ! deploy_services; then
         log_error "Failed to deploy services"
         call_ai_resolver "Service deployment failed" "$(tail -n 100 '$LOG_FILE')"
+        
+        # Offer rollback option
+        echo -e "\n${YELLOW}Would you like to rollback to the previous state? [y/N]: ${NC}"
+        read -t 30 -n 1 -r rollback_choice || rollback_choice='n'
+        echo
+        
+        if [[ $rollback_choice =~ ^[Yy]$ ]]; then
+            log_info "Attempting automatic rollback..."
+            if [ -x "./rollback.sh" ]; then
+                ./rollback.sh --latest
+            else
+                log_error "rollback.sh not found or not executable"
+            fi
+        fi
+        
         exit 1
     fi
     print_separator
