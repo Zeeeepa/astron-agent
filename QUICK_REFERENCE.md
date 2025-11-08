@@ -35,6 +35,12 @@
 
 # Analyze errors
 ./logs.sh --errors
+
+# Update to latest version
+./update.sh
+
+# Validate configuration
+./validate-config.sh
 ```
 
 ---
@@ -58,10 +64,14 @@ astron-agent/
 ├── start.sh                            # Start with health checks
 ├── stop.sh                             # Graceful shutdown
 ├── rollback.sh                         # Rollback to previous state
-├── status.sh                           # System status checker ⭐ NEW
-├── logs.sh                             # Intelligent log analyzer ⭐ NEW
+├── status.sh                           # System status checker
+├── logs.sh                             # Intelligent log analyzer
+├── update.sh                           # Safe service updates ⭐ NEW
+├── validate-config.sh                  # Configuration validator ⭐ NEW
 ├── backups/                            # Automatic backups directory
+├── .env.example                        # Configuration template ⭐ NEW
 ├── UBUNTU_DEPLOYMENT_GUIDE.md          # Full documentation
+├── DEPLOYMENT_AUTOMATION_README.md     # Complete automation guide ⭐ NEW
 ├── QUICK_REFERENCE.md                  # This file
 └── docker/astronAgent/
     ├── .env                            # Configuration file

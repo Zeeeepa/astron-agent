@@ -39,7 +39,12 @@ RETRY_DELAY=5
 # AI Configuration for error resolution
 export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-https://api.z.ai/api/anthropic}"
 export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-glm-4.6}"
-export ANTHROPIC_AUTH_TOKEN="${ANTHROPIC_AUTH_TOKEN:-ae034cdcfefe4227879e6962493bc113.mRURYmJrKOFSEaY0}"
+# SECURITY: Set ANTHROPIC_AUTH_TOKEN in environment, not here!
+# export ANTHROPIC_AUTH_TOKEN="your_token_here"
+if [ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
+    log_warning "ANTHROPIC_AUTH_TOKEN not set - AI error resolution disabled"
+    log_info "To enable: export ANTHROPIC_AUTH_TOKEN='your_token'"
+fi
 
 # Error tracking
 declare -a ERRORS=()
