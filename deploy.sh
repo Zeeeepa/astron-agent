@@ -50,6 +50,15 @@ fi
 declare -a ERRORS=()
 ERROR_COUNT=0
 
+# Load enhanced error handling library (if available)
+if [ -f "lib/error-handler.sh" ]; then
+    source lib/error-handler.sh
+    ENHANCED_ERROR_HANDLING=true
+    log_info "Enhanced error handling enabled (circuit breakers, AI fallback, exponential backoff)"
+else
+    ENHANCED_ERROR_HANDLING=false
+fi
+
 ################################################################################
 # Utility Functions
 ################################################################################
@@ -173,14 +182,26 @@ record_error() {
     log_error "$error_msg"
 }
 
-# Retry mechanism
+# Retry mechanism with optional exponential backoff
 retry_command() {
     local max_attempts="${1:-$MAX_RETRIES}"
     local delay="${2:-$RETRY_DELAY}"
     shift 2
     local cmd="$@"
-    local attempt=1
     
+    # Use enhanced retry if available
+    if [ "$ENHANCED_ERROR_HANDLING" = true ]; then
+        log_info "Using exponential backoff retry strategy"
+        if retry_with_backoff "$max_attempts" "$cmd"; then
+            return 0
+        else
+            record_error "Command failed after $max_attempts attempts: $cmd"
+            return 1
+        fi
+    fi
+    
+    # Fallback to basic retry
+    local attempt=1
     while [ $attempt -le $max_attempts ]; do
         log_info "Attempt $attempt/$max_attempts: $cmd"
         
