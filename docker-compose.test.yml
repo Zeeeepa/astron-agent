@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  mock-astron-agent:
+    image: python:3.11-slim
+    working_dir: /app
+    command: >
+      bash -c "
+      pip install fastapi uvicorn aiohttp pydantic &&
+      python -c \"
+      from fastapi import FastAPI
+      import uvicorn
+      
+      app = FastAPI(title='Mock Astron Agent')
+      
+      @app.get('/health')
+      async def health():
+          return {'status': 'healthy', 'service': 'mock-astron-agent'}
+      
+      @app.get('/api/v1/rpa/health')
+      async def rpa_health():
+          return {'status': 'healthy', 'service': 'rpa_integration', 'timestamp': 1234567890}
+      
+      @app.get('/api/v1/rpa/components/mapping')
+      async def component_mapping():
+          return {
+              'component_categories': {
+                  'ui_testing': {'components': ['rpabrowser', 'rpacv', 'rpawindow']},
+                  'api_testing': {'components': ['rpanetwork', 'rpaopenapi']},
+                  'data_processing': {'components': ['rpadatabase', 'rpaexcel', 'rpapdf', 'rpadocx']},
+                  'ai_processing': {'components': ['rpaai', 'rpaverifycode']},
+                  'system_automation': {'components': ['rpasystem', 'rpaencrypt', 'rpaemail', 'rpaenterprise']}
+              },
+              'total_components': 15,
+              'supported_workflows': ['ui_validation', 'api_validation', 'data_processing', 'ai_analysis', 'system_monitoring']
+          }
+      
+      @app.post('/api/v1/rpa/projects/create')
+      async def create_project(request: dict):
+          return {
+              'project_id': 'test_project_123',
+              'status': 'initializing',
+              'message': 'Project created successfully. PRD processing started.',
+              'data': {'project_name': request.get('name', 'Test Project')}
+          }
+      
+      uvicorn.run(app, host='0.0.0.0', port=8000)
+      \"
+      "
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  mock-astron-rpa:
+    image: python:3.11-slim
+    working_dir: /app
+    command: >
+      bash -c "
+      pip install fastapi uvicorn &&
+      python -c \"
+      from fastapi import FastAPI
+      import uvicorn
+      
+      app = FastAPI(title='Mock Astron RPA')
+      
+      @app.get('/health')
+      async def health():
+          return {'status': 'healthy', 'service': 'mock-astron-rpa'}
+      
+      @app.post('/mcp')
+      async def mcp_endpoint(request: dict):
+          return {
+              'status': 'success',
+              'result': 'Mock execution completed',
+              'execution_time': 30
+          }
+      
+      uvicorn.run(app, host='0.0.0.0', port=8020)
+      \"
+      "
+    ports:
+      - "8020:8020"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8020/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  astron-network:
+    driver: bridge

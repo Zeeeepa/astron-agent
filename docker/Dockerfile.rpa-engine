@@ -1,0 +1,55 @@
+# Astron-RPA Engine Dockerfile
+FROM python:3.13-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies for RPA components
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    build-essential \
+    chromium \
+    chromium-driver \
+    xvfb \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxss1 \
+    libgconf-2-4 \
+    libxrandr2 \
+    libasound2 \
+    libpangocairo-1.0-0 \
+    libatk1.0-0 \
+    libcairo-gobject2 \
+    libgtk-3-0 \
+    libgdk-pixbuf2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY requirements.rpa-engine.txt .
+RUN pip install --no-cache-dir -r requirements.rpa-engine.txt
+
+# Copy RPA Engine service code
+COPY rpa-engine/ .
+
+# Create necessary directories
+RUN mkdir -p /app/logs /app/config /app/components /app/workflows
+
+# Set Python path
+ENV PYTHONPATH=/app
+
+# Set display for headless browser
+ENV DISPLAY=:99
+
+# Expose port
+EXPOSE 8021
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8021/health')" || exit 1
+
+# Start Xvfb and run the RPA Engine service
+CMD ["sh", "-c", "Xvfb :99 -screen 0 1024x768x24 & python -m uvicorn main:app --host 0.0.0.0 --port 8021"]
