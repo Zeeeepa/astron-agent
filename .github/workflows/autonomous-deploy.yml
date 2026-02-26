@@ -1,0 +1,496 @@
+name: 🤖 Autonomous Deployment Orchestration
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      deployment_mode:
+        description: 'Deployment Mode'
+        required: true
+        default: 'intelligent'
+        type: choice
+        options:
+        - intelligent
+        - force
+        - rollback
+      target_environment:
+        description: 'Target Environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - development
+        - staging
+        - production
+      astron_rpa_version:
+        description: 'Astron-RPA Version (optional)'
+        required: false
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  DEPLOYMENT_CONFIG_PATH: ./deployment/config
+  HEALTH_CHECK_TIMEOUT: 300
+  ROLLBACK_THRESHOLD: 3
+
+jobs:
+  # ============================================================================
+  # INTELLIGENT DECISION MAKING
+  # ============================================================================
+  intelligent-analysis:
+    name: 🧠 Intelligent Deployment Analysis
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.decision.outputs.should_deploy }}
+      deployment_strategy: ${{ steps.decision.outputs.strategy }}
+      risk_level: ${{ steps.decision.outputs.risk_level }}
+      astron_rpa_compatible: ${{ steps.compatibility.outputs.compatible }}
+      deployment_plan: ${{ steps.decision.outputs.plan }}
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: 📦 Install Dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install requests pyyaml gitpython
+        
+    - name: 🔍 Analyze Code Changes
+      id: changes
+      run: |
+        python deployment/scripts/analyze_changes.py \
+          --base-ref ${{ github.event.before || 'HEAD~1' }} \
+          --head-ref ${{ github.sha }} \
+          --output-format json > changes_analysis.json
+        
+    - name: 🏥 System Health Check
+      id: health
+      run: |
+        python deployment/scripts/health_checker.py \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --output-format json > health_status.json
+          
+    - name: 🔗 Astron-RPA Compatibility Check
+      id: compatibility
+      run: |
+        python deployment/scripts/compatibility_checker.py \
+          --astron-rpa-repo "Zeeeepa/astron-rpa" \
+          --astron-rpa-version "${{ github.event.inputs.astron_rpa_version || 'latest' }}" \
+          --output-format json > compatibility_status.json
+        echo "compatible=$(jq -r '.compatible' compatibility_status.json)" >> $GITHUB_OUTPUT
+        
+    - name: 🤖 Intelligent Decision Making
+      id: decision
+      run: |
+        python deployment/scripts/intelligent_decision_maker.py \
+          --changes-file changes_analysis.json \
+          --health-file health_status.json \
+          --compatibility-file compatibility_status.json \
+          --deployment-mode "${{ github.event.inputs.deployment_mode || 'intelligent' }}" \
+          --output-format json > deployment_decision.json
+          
+        # Extract decision outputs
+        echo "should_deploy=$(jq -r '.should_deploy' deployment_decision.json)" >> $GITHUB_OUTPUT
+        echo "strategy=$(jq -r '.strategy' deployment_decision.json)" >> $GITHUB_OUTPUT
+        echo "risk_level=$(jq -r '.risk_level' deployment_decision.json)" >> $GITHUB_OUTPUT
+        echo "plan=$(jq -r '.plan' deployment_decision.json)" >> $GITHUB_OUTPUT
+        
+    - name: 📊 Upload Analysis Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: deployment-analysis
+        path: |
+          changes_analysis.json
+          health_status.json
+          compatibility_status.json
+          deployment_decision.json
+
+  # ============================================================================
+  # BUILD AND TEST PIPELINE
+  # ============================================================================
+  build-and-test:
+    name: 🏗️ Build & Test All Components
+    runs-on: ubuntu-latest
+    needs: intelligent-analysis
+    if: needs.intelligent-analysis.outputs.should_deploy == 'true'
+    
+    strategy:
+      matrix:
+        component:
+          - name: agent-core
+            path: ./core/agent
+            language: python
+            dockerfile: ./core/agent/Dockerfile
+          - name: workflow-engine
+            path: ./core/workflow
+            language: python
+            dockerfile: ./core/workflow/Dockerfile
+          - name: knowledge-service
+            path: ./core/knowledge
+            language: python
+            dockerfile: ./core/knowledge/Dockerfile
+          - name: console-backend
+            path: ./console/backend
+            language: java
+            dockerfile: ./console/backend/Dockerfile
+          - name: console-frontend
+            path: ./console/frontend
+            language: typescript
+            dockerfile: ./console/frontend/Dockerfile
+          - name: tenant-service
+            path: ./core/tenant
+            language: go
+            dockerfile: ./core/tenant/Dockerfile
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🏗️ Build Component - ${{ matrix.component.name }}
+      run: |
+        cd ${{ matrix.component.path }}
+        
+        case "${{ matrix.component.language }}" in
+          python)
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+            python -m pytest tests/ || true
+            ;;
+          java)
+            mvn clean compile test package -DskipTests=false
+            ;;
+          typescript)
+            npm ci
+            npm run build
+            npm run test || true
+            ;;
+          go)
+            go mod download
+            go test ./...
+            go build -o app
+            ;;
+        esac
+        
+    - name: 🐳 Build Docker Image
+      run: |
+        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.component.name }}:${{ github.sha }} \
+          -f ${{ matrix.component.dockerfile }} .
+          
+    - name: 📤 Push Docker Image
+      run: |
+        echo ${{ secrets.GITHUB_TOKEN }} | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.component.name }}:${{ github.sha }}
+
+  # ============================================================================
+  # ASTRON-RPA INTEGRATION PREPARATION
+  # ============================================================================
+  prepare-rpa-integration:
+    name: 🔗 Prepare Astron-RPA Integration
+    runs-on: ubuntu-latest
+    needs: [intelligent-analysis, build-and-test]
+    if: needs.intelligent-analysis.outputs.astron_rpa_compatible == 'true'
+    
+    steps:
+    - name: 📥 Checkout Astron-RPA
+      uses: actions/checkout@v4
+      with:
+        repository: Zeeeepa/astron-rpa
+        token: ${{ secrets.GITHUB_TOKEN }}
+        path: astron-rpa
+        
+    - name: 🔧 Configure RPA Integration
+      run: |
+        python deployment/scripts/configure_rpa_integration.py \
+          --astron-agent-version ${{ github.sha }} \
+          --astron-rpa-path ./astron-rpa \
+          --integration-config ./deployment/config/rpa-integration.yml
+          
+    - name: 🏗️ Build Astron-RPA Components
+      run: |
+        cd astron-rpa
+        
+        # Build Python Engine
+        cd engine
+        pip install -r requirements.txt
+        python -m pytest tests/ || true
+        cd ..
+        
+        # Build Java Backend Services
+        cd backend
+        for service in ai-service openapi-service resource-service robot-service; do
+          cd $service
+          mvn clean compile package -DskipTests=false
+          cd ..
+        done
+        cd ..
+        
+        # Build Vue Frontend
+        cd frontend
+        npm ci
+        npm run build
+        cd ..
+        
+    - name: 📤 Upload RPA Integration Config
+      uses: actions/upload-artifact@v3
+      with:
+        name: rpa-integration-config
+        path: deployment/config/rpa-integration.yml
+
+  # ============================================================================
+  # DEPLOYMENT EXECUTION
+  # ============================================================================
+  deploy:
+    name: 🚀 Execute Deployment
+    runs-on: ubuntu-latest
+    needs: [intelligent-analysis, build-and-test, prepare-rpa-integration]
+    if: always() && needs.intelligent-analysis.outputs.should_deploy == 'true'
+    environment: ${{ github.event.inputs.target_environment || 'staging' }}
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 📥 Download Artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: deployment-analysis
+        path: ./analysis
+        
+    - name: 📥 Download RPA Config
+      uses: actions/download-artifact@v3
+      with:
+        name: rpa-integration-config
+        path: ./config
+      continue-on-error: true
+      
+    - name: 🔧 Setup Deployment Environment
+      run: |
+        # Install deployment tools
+        pip install docker-compose kubernetes pyyaml requests
+        
+        # Setup kubectl if deploying to Kubernetes
+        if [ "${{ needs.intelligent-analysis.outputs.deployment_strategy }}" = "kubernetes" ]; then
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+        fi
+        
+    - name: 🚀 Execute Deployment Strategy
+      run: |
+        strategy="${{ needs.intelligent-analysis.outputs.deployment_strategy }}"
+        environment="${{ github.event.inputs.target_environment || 'staging' }}"
+        
+        case "$strategy" in
+          "blue-green")
+            python deployment/scripts/blue_green_deploy.py \
+              --environment $environment \
+              --version ${{ github.sha }} \
+              --config-path ./config
+            ;;
+          "canary")
+            python deployment/scripts/canary_deploy.py \
+              --environment $environment \
+              --version ${{ github.sha }} \
+              --canary-percentage 10 \
+              --config-path ./config
+            ;;
+          "rolling")
+            python deployment/scripts/rolling_deploy.py \
+              --environment $environment \
+              --version ${{ github.sha }} \
+              --config-path ./config
+            ;;
+          *)
+            echo "Using default deployment strategy"
+            docker-compose -f deployment/docker-compose.$environment.yml up -d
+            ;;
+        esac
+        
+    - name: ⏱️ Wait for Deployment Stabilization
+      run: |
+        python deployment/scripts/wait_for_stability.py \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --timeout ${{ env.HEALTH_CHECK_TIMEOUT }} \
+          --check-interval 30
+
+  # ============================================================================
+  # HEALTH MONITORING AND VALIDATION
+  # ============================================================================
+  post-deployment-validation:
+    name: 🏥 Post-Deployment Health Validation
+    runs-on: ubuntu-latest
+    needs: [intelligent-analysis, deploy]
+    if: always() && needs.deploy.result == 'success'
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🏥 Comprehensive Health Check
+      id: health_check
+      run: |
+        python deployment/scripts/comprehensive_health_check.py \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --version ${{ github.sha }} \
+          --include-rpa-integration \
+          --output-format json > post_deployment_health.json
+          
+        health_status=$(jq -r '.overall_health' post_deployment_health.json)
+        echo "health_status=$health_status" >> $GITHUB_OUTPUT
+        
+    - name: 🧪 Integration Tests
+      run: |
+        python deployment/scripts/integration_tests.py \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --test-suite comprehensive \
+          --include-rpa-tests
+          
+    - name: 📊 Performance Baseline
+      run: |
+        python deployment/scripts/performance_baseline.py \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --duration 300 \
+          --output-format json > performance_baseline.json
+          
+    - name: 📤 Upload Validation Results
+      uses: actions/upload-artifact@v3
+      with:
+        name: post-deployment-validation
+        path: |
+          post_deployment_health.json
+          performance_baseline.json
+          
+    - name: 🚨 Trigger Rollback if Unhealthy
+      if: steps.health_check.outputs.health_status != 'healthy'
+      run: |
+        echo "Deployment validation failed, triggering rollback..."
+        python deployment/scripts/trigger_rollback.py \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --reason "Post-deployment validation failed"
+
+  # ============================================================================
+  # SELF-HEALING AND MONITORING SETUP
+  # ============================================================================
+  setup-monitoring:
+    name: 📊 Setup Autonomous Monitoring
+    runs-on: ubuntu-latest
+    needs: [post-deployment-validation]
+    if: always() && needs.post-deployment-validation.result == 'success'
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Deploy Monitoring Stack
+      run: |
+        python deployment/scripts/deploy_monitoring.py \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --enable-self-healing \
+          --enable-auto-scaling \
+          --alert-webhook ${{ secrets.ALERT_WEBHOOK_URL }}
+          
+    - name: 📈 Configure Dashboards
+      run: |
+        python deployment/scripts/configure_dashboards.py \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --include-rpa-metrics \
+          --grafana-url ${{ secrets.GRAFANA_URL }} \
+          --grafana-token ${{ secrets.GRAFANA_TOKEN }}
+          
+    - name: 🤖 Setup Autonomous Agents
+      run: |
+        python deployment/scripts/setup_autonomous_agents.py \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --codegen-api-key ${{ secrets.CODEGEN_API_KEY }} \
+          --enable-auto-remediation \
+          --enable-predictive-scaling
+
+  # ============================================================================
+  # CODEGEN INTEGRATION AND FEEDBACK LOOPS
+  # ============================================================================
+  codegen-integration:
+    name: 🔄 Codegen Platform Integration
+    runs-on: ubuntu-latest
+    needs: [setup-monitoring]
+    if: always() && needs.setup-monitoring.result == 'success'
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🔗 Register Deployment with Codegen
+      run: |
+        python deployment/scripts/codegen_integration.py \
+          --action register_deployment \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --version ${{ github.sha }} \
+          --codegen-api-key ${{ secrets.CODEGEN_API_KEY }} \
+          --deployment-metadata ./analysis/deployment_decision.json
+          
+    - name: 🔄 Setup Continuous Feedback Loop
+      run: |
+        python deployment/scripts/setup_feedback_loop.py \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --codegen-api-key ${{ secrets.CODEGEN_API_KEY }} \
+          --feedback-interval 3600 \
+          --enable-auto-optimization
+          
+    - name: 📊 Create Deployment Report
+      run: |
+        python deployment/scripts/create_deployment_report.py \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --version ${{ github.sha }} \
+          --include-metrics \
+          --include-recommendations \
+          --output-format markdown > deployment_report.md
+          
+    - name: 💬 Post Deployment Summary
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const report = fs.readFileSync('deployment_report.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 🚀 Autonomous Deployment Complete\n\n${report}`
+          });
+
+  # ============================================================================
+  # CLEANUP AND OPTIMIZATION
+  # ============================================================================
+  cleanup:
+    name: 🧹 Cleanup and Optimization
+    runs-on: ubuntu-latest
+    needs: [codegen-integration]
+    if: always()
+    
+    steps:
+    - name: 🧹 Cleanup Old Deployments
+      run: |
+        python deployment/scripts/cleanup_old_deployments.py \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --keep-last 5 \
+          --cleanup-images \
+          --cleanup-volumes
+          
+    - name: 📊 Optimize Resource Usage
+      run: |
+        python deployment/scripts/optimize_resources.py \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --enable-auto-scaling \
+          --cost-optimization
